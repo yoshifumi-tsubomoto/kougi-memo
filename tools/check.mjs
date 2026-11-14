@@ -6,7 +6,7 @@ import { serve } from './serve.mjs';
 const { chromium } = createRequire(import.meta.url)('playwright');
 const server = await serve(0);
 const base = `http://localhost:${server.address().port}/`;
-const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
+const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--auto-select-desktop-capture-source=Entire screen', '--enable-usermedia-screen-capturing'] });
 const ctx = await browser.newContext({ permissions: ['microphone'] });
 const p = await ctx.newPage();
 const errors = [];
@@ -191,6 +191,31 @@ await step('広く表示のとき、状態の点に短い文字が付く', async
   const t = await p.$eval('.ind > span[data-short="録音"]', (e) => getComputedStyle(e, '::after').content);
   await p.click('#focusBtn');
   if (!t.includes('録音')) throw new Error('文字が付かない：' + t);
+});
+await step('画面を共有して、範囲を決めてスクリーンショットを撮る', async () => {
+  await p.click('[data-tab="vLive"]');
+  const before = await p.locator('#feed .fi.photo').count();
+  await p.click('#shareBtn');
+  await p.waitForSelector('#regionModal:not([hidden])', { timeout: 8000 });
+  const box = await p.$eval('#regionCanvas', (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; });
+  await p.mouse.move(box.x + box.w * 0.2, box.y + box.h * 0.2); await p.mouse.down();
+  await p.mouse.move(box.x + box.w * 0.7, box.y + box.h * 0.6, { steps: 5 }); await p.mouse.up();
+  await p.click('[data-act="region-ok"]');
+  if (!(await p.isVisible('#shareBar'))) throw new Error('共有中の帯が出ない');
+  await p.click('[data-act="shot"]');
+  await p.waitForFunction((n) => document.querySelectorAll('#feed .fi.photo').length > n, before, { timeout: 5000 });
+  const r = await p.evaluate(() => JSON.parse(localStorage.getItem('shotRegion')));
+  if (!r || Math.abs(r.w - 0.5) > 0.05) throw new Error('範囲が保存されない：' + JSON.stringify(r));
+  await p.click('[data-act="share-stop"]');
+  if (await p.isVisible('#shareBar')) throw new Error('共有をやめられない');
+});
+await step('音声の入力を選べる（設定）', async () => {
+  await p.click('#settingsBtn');
+  await p.waitForFunction(() => document.querySelectorAll('#audioIn option').length >= 2);
+  await p.selectOption('#audioIn', 'share');
+  if ((await p.evaluate(() => JSON.parse(localStorage.getItem('audioIn')))) !== 'share') throw new Error('保存されない');
+  await p.selectOption('#audioIn', '');
+  await p.click('#settings [data-close]');
 });
 // スマホとの連携（手元に仲介サーバーを立てて、PCとスマホの2つの画面で確かめる）
 let peerServer = null;
