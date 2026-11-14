@@ -97,6 +97,12 @@ await step('メモを追加した直後に打った文字が消えない', async
   if ((await p.inputValue('#memoIn')) !== '続き') throw new Error('打った文字が消えた：' + await p.inputValue('#memoIn'));
   await p.fill('#memoIn', '');
 });
+await step('メモ欄が自動で下までスクロールする', async () => {
+  for (let i = 0; i < 25; i++) { await p.fill('#memoIn', 'スクロールの確認 ' + i); await p.press('#memoIn', 'Enter'); }
+  await p.waitForTimeout(300);
+  const gap = await p.$eval('#fScroll', (e) => e.scrollHeight - e.scrollTop - e.clientHeight);
+  if (gap > 4) throw new Error('いちばん下まで行かない（残り ' + gap + 'px）');
+});
 await step('広く表示・文字起こしをたたむ（開き直しても保たれる）', async () => {
   await p.click('[data-tab="vLive"]');
   await p.click('#focusBtn');
@@ -122,6 +128,7 @@ await step('写真の撮影時刻を読んで、その時刻の位置に並べ�
   await p.waitForSelector('#feed .fi.photo');
   const row = await p.locator('#feed .fi.photo').first().textContent();
   if (!row.includes('09:30:00') || !row.includes('撮影時刻で配置')) throw new Error('撮影時刻で並んでいない：' + row.trim().slice(0, 60));
+  if ((await p.$eval('#feed img', (i) => getComputedStyle(i).float)) !== 'left') throw new Error('写真の横に文字が回り込まない');
 });
 
 await step('拡大した写真を、写真を押しても Esc でも閉じられる', async () => {

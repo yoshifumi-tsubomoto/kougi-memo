@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.4.1';
+export const APP_VERSION = '0.4.2';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -334,7 +334,7 @@ function render(full) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === S.tab));
   if (!has) return;
   if (full) { $('#fTitle').value = S.lec.title || ''; $('#fSpeaker').value = S.lec.speaker || ''; $('#fDate').value = S.lec.date || ''; $('#fVenue').value = S.lec.venue || ''; }
-  renderCtrl(); renderTranscript(); renderFeed(); renderTypes();
+  renderCtrl(); renderTranscript(); renderFeed(true); renderTypes();
   if (S.tab === 'vSum') renderSummary();
 }
 function renderCtrl() {
@@ -380,7 +380,7 @@ function appendTLine(t) {
   scrollBottom('#tScroll');
 }
 function showInterim(text) { const el = $('#interim'); el.hidden = !text; el.querySelector('.tx').textContent = text; if (text) scrollBottom('#tScroll'); }
-function scrollBottom(sel) { if (sel === '#tScroll' && !$('#autoScroll').checked) return; const el = $(sel); el.scrollTop = el.scrollHeight; }
+function scrollBottom(sel) { if (sel === '#tScroll' && !$('#autoScroll').checked) return; if (sel === '#fScroll' && !$('#autoScrollF').checked) return; const el = $(sel); el.scrollTop = el.scrollHeight; }
 
 function renderFeed(scroll) {
   const items = S.memos.slice().sort((a, b) => a.at - b.at);
@@ -388,24 +388,34 @@ function renderFeed(scroll) {
   if (!items.length) { $('#feed').innerHTML = '<li class="empty">気づいたことや写真がここに並びます。写真は貼り付け（Ctrl+V）やドラッグでも追加できます。</li>'; return; }
   $('#feed').innerHTML = items.map((m) => {
     const tag = TAGS[m.type];
-    return `<li class="fi ${esc(m.type)}"><span class="tm">${hms(m.at)}</span>
-      <div class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.from === 'phone' ? '<span class="from"> 📱</span>' : m.from === 'import' ? '<span class="from"> （撮影時刻で配置）</span>' : ''}${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}</div>
-      <button class="x" type="button" data-del="${esc(m.id)}" title="削除" aria-label="削除">×</button></li>`;
+    // 写真は左に寄せ、続くメモの文字が写真の横に回り込むようにする
+    return `<li class="fi ${esc(m.type)}">${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}<span class="tm">${hms(m.at)}</span><span class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.from === 'phone' ? '<span class="from"> 📱</span>' : m.from === 'import' ? '<span class="from"> （撮影時刻で配置）</span>' : ''}</span><button class="x" type="button" data-del="${esc(m.id)}" title="削除" aria-label="削除">×</button></li>`;
   }).join('');
-  document.querySelectorAll('#feed img[data-img]').forEach(async (img) => { img.src = await imageUrl(img.dataset.img); });
+  document.querySelectorAll('#feed img[data-img]').forEach(async (img) => {
+    img.addEventListener('load', () => scrollBottom('#fScroll'), { once: true });   // 写真が読み込まれて高さが変わっても、いちばん下を見せる
+    img.src = await imageUrl(img.dataset.img);
+  });
   if (scroll) scrollBottom('#fScroll');
 }
 function renderTypes() {
   $('#types').innerHTML = TYPES.map((t, i) => `<button type="button" class="chip${S.type === t.k ? ' on' : ''}" data-type="${t.k}" title="Alt+${i + 1}">${t.label}</button>`).join('');
 }
+let memoSetH = 0;
 function autosize() {
-  const ta = $('#memoIn'); ta.style.height = 'auto';
-  const min = parseFloat(getComputedStyle(ta).minHeight) || 0;
-  ta.style.height = Math.max(min, Math.min(ta.scrollHeight + 4, window.innerHeight * 0.45)) + 'px';
+  const ta = $('#memoIn');
+  const base = (typeof VIEW !== 'undefined' && VIEW.memoH) || (document.body.classList.contains('focus') ? 140 : 92);
+  ta.style.height = 'auto';
+  memoSetH = Math.round(Math.max(base, Math.min(ta.scrollHeight + 4, window.innerHeight * 0.45)));
+  ta.style.height = memoSetH + 'px';
 }
+// 右下のつまみで高さを変えたら、その高さを覚える（狭くも広くもできる）
+['pointerup', 'mouseup'].forEach((ev) => $('#memoIn').addEventListener(ev, () => {
+  const h = $('#memoIn').offsetHeight;
+  if (memoSetH && Math.abs(h - memoSetH) > 6) { memoSetH = h; setView({ memoH: h }); }
+}));
 
 /* ============================== 表示の切り替え（広く表示・文字起こしをたたむ） ============================== */
-const VIEW = Object.assign({ focus: false, tx: true }, ls('view') || {});
+const VIEW = Object.assign({ focus: false, tx: true, memoH: 0 }, ls('view') || {});
 function applyView() {
   document.body.classList.toggle('focus', VIEW.focus);
   // 広く表示：タブとセッション操作を上の帯へ。戻すときは元の場所へ

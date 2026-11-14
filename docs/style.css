@@ -158,9 +158,11 @@ body.focus .bar{gap:6px}
 .shead{margin:14px 0 4px;font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;color:var(--teal);border-top:1px solid var(--line);padding-top:8px}
 .empty{color:var(--muted);font-size:13px;padding:18px 0;list-style:none}
 
-.feed{list-style:none;margin:0;padding:0;display:grid;gap:4px}
-.fi{display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:8px;padding:5px 0}
-.fi .tm{font-family:var(--f-mono);font-size:12px;color:var(--muted-2);padding-top:2px}
+.feed{list-style:none;margin:0;padding:0;display:block}
+.feed::after{content:"";display:block;clear:both}
+/* メモは普通の文章の流れで並べる。写真は左に寄せ、後に続くメモの文字が写真の横に回り込む */
+.fi{display:block;position:relative;padding:5px 26px 5px 0;overflow-wrap:anywhere}
+.fi .tm{display:inline-block;min-width:70px;font-family:var(--f-mono);font-size:12px;color:var(--muted-2)}
 .fi .tx{overflow-wrap:anywhere}
 .fi .t{white-space:pre-wrap;font-size:15px}
 .fi .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:0 8px;margin-right:6px;border:1px solid transparent}
@@ -171,8 +173,8 @@ body.focus .bar{gap:6px}
 .fi.quote .tag{background:var(--quote-soft);color:var(--quote);border-color:color-mix(in srgb,var(--quote) 30%,transparent)}
 .fi.quote .t{font-style:italic;color:var(--quote)}
 .fi.photo .tag{background:var(--teal-soft);color:var(--teal);border-color:color-mix(in srgb,var(--teal) 30%,transparent)}
-.fi img{display:block;max-width:100%;max-height:220px;border-radius:12px;margin-top:4px;cursor:zoom-in;border:1px solid var(--glass-edge);box-shadow:0 4px 14px rgba(27,58,107,.1)}
-.fi .x{border:0;background:transparent;color:var(--muted);font-size:13px;opacity:.5;align-self:start}
+.fi img{float:left;position:relative;z-index:1;width:min(200px,42%);height:auto;margin:4px 14px 8px 0;border-radius:12px;cursor:zoom-in;border:1px solid var(--glass-edge);box-shadow:0 4px 14px rgba(27,58,107,.1)}
+.fi .x{position:absolute;top:4px;right:0;border:0;background:transparent;color:var(--muted);font-size:13px;opacity:.5}
 .fi:hover .x,.fi .x:focus-visible{opacity:1}
 .composer{border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);padding:10px 16px 14px;display:grid;gap:8px}
 .types{display:flex;gap:6px;flex-wrap:wrap}
@@ -180,10 +182,10 @@ body.focus .bar{gap:6px}
 .chip.on{background:var(--navy);color:#fff;border-color:var(--navy)}
 .row{display:flex;gap:8px;align-items:stretch}
 .row .btn{align-self:flex-end}
-#memoIn{flex:1;min-width:0;border:1.5px solid #C5D2E0;border-radius:14px;padding:10px 14px;background:#FFFFFF;color:var(--ink);font-size:16px;line-height:1.6;resize:vertical;min-height:92px;max-height:45vh;box-shadow:inset 0 1px 2px rgba(20,36,59,.06)}
+#memoIn{flex:1;min-width:0;border:1.5px solid #C5D2E0;border-radius:14px;padding:10px 14px;background:#FFFFFF;color:var(--ink);font-size:16px;line-height:1.6;resize:vertical;min-height:44px;max-height:60vh;box-shadow:inset 0 1px 2px rgba(20,36,59,.06)}
 #memoIn::placeholder{color:#6E7C90;opacity:1}
 #memoIn:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px color-mix(in srgb,var(--teal) 18%,transparent)}
-body.focus #memoIn{min-height:140px}
+
 #memoBtn{background:var(--add);border-color:var(--add);color:#fff;font-weight:700;padding:9px 20px}
 
 /* まとめ・出力 */
