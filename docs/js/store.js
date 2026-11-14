@@ -2,7 +2,9 @@
 // 画面からはこのファイルの関数だけを呼ぶ。Googleドライブ連携版を作るときは、
 // 同じ関数を持つ別の保存先を用意して差し替える。
 
-const DB_NAME = 'kougi-memo';
+// 試験版（/preview/）は、本番とは別の保存場所を使う（本番の記録をこわさないため）
+export const PREVIEW = /\/preview\//.test(location.pathname);
+const DB_NAME = PREVIEW ? 'kougi-memo-preview' : 'kougi-memo';
 const DB_VER = 1;
 let dbp = null;
 

@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node tools/serve.mjs",
-    "check": "node tools/check.mjs"
+    "check": "node tools/check.mjs",
+    "stage": "node tools/stage.mjs"
   },
   "license": "Apache-2.0",
   "devDependencies": {

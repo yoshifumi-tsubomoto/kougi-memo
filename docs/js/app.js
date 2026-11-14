@@ -837,7 +837,7 @@ $('#installBtn').addEventListener('click', doInstall);
 refreshInstall();
 applyView();
 
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+if ('serviceWorker' in navigator && location.protocol !== 'file:' && !store.PREVIEW) {
   navigator.serviceWorker.register('sw.js').then((reg) => {
     const ask = (w) => { $('#updateBar').hidden = false; $('#updateBtn').onclick = () => { if (recording()) { toast('記録中は更新できません。セッションを終了してから押してください'); return; } w.postMessage('skipWaiting'); }; };
     if (reg.waiting && navigator.serviceWorker.controller) ask(reg.waiting);
@@ -853,10 +853,16 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 
 /* ============================== タブは1つで ============================== */
 if (navigator.locks) {
-  navigator.locks.request('kougi-memo-tab', { ifAvailable: true }, (lock) => {
+  navigator.locks.request(store.PREVIEW ? 'kougi-memo-preview-tab' : 'kougi-memo-tab', { ifAvailable: true }, (lock) => {
     if (!lock) { toast('このアプリは別のタブでも開いています。記録が混ざらないよう、タブは1つで使ってください', 8000); return; }
     return new Promise(() => {});   // このタブが開いている間は持ち続ける
   });
+}
+
+/* ============================== 試験版の表示 ============================== */
+if (store.PREVIEW) {
+  document.body.insertAdjacentHTML('afterbegin', '<div class="update preview-bar">試験版です。公開前の新しい機能を試すためのもので、記録は本番とは別に保存されます（本番の記録は見えません・変わりません）。</div>');
+  document.title = '【試験版】' + document.title;
 }
 
 /* ============================== 起動 ============================== */

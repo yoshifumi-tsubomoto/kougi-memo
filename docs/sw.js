@@ -18,8 +18,18 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin === location.origin) {
+    // 試験版（preview/）にはさわらない。いつも最新のファイルを取りに行かせる
+    if (url.pathname.startsWith(new URL('preview/', self.registration.scope).pathname)) return;
     // アプリ本体：しまってあるものを使う（更新は新しい版のインストールで行う）
-    e.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || (req.mode === 'navigate' ? caches.match('./') : null) || fetch(req)));
+    e.respondWith((async () => {
+      const hit = await caches.match(req, { ignoreSearch: true });
+      if (hit) return hit;
+      try { return await fetch(req); }
+      catch (err) {
+        if (req.mode === 'navigate') { const top = await caches.match('./'); if (top) return top; }   // ネットがないときは本体を開く
+        throw err;
+      }
+    })());
   } else if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
     e.respondWith(caches.open(FONT_CACHE).then(async (c) => {
       const hit = await c.match(req);
