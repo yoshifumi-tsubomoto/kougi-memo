@@ -22,12 +22,13 @@
   <div class="bar">
     <span class="brand"><span class="mark" aria-hidden="true">Km</span><span class="brand-text"><strong>講義メモ</strong><small>Tsubomoto Lab.</small></span></span>
     <select id="lecSel" aria-label="講義を選ぶ"></select>
-    <button class="btn" id="newBtn" type="button">＋ 新しい講義</button>
+    <button class="btn" id="newBtn" type="button" title="新しい講義">＋<span class="lbl"> 新しい講義</span></button>
+    <span class="slot" id="focusSlot"></span>
     <span class="sp"></span>
-    <button class="btn" id="linkBtn" type="button" hidden>📱 スマホ</button>
+    <button class="btn" id="linkBtn" type="button" title="スマホと連携" hidden>📱<span class="lbl"> スマホ</span></button>
     <button class="btn ghost" id="focusBtn" type="button" aria-pressed="false" title="講義の情報や表示を隠して、記録の画面を広くします" hidden>⤢ 広く表示</button>
-    <button class="btn ghost" id="installBtn" type="button">⬇ アプリにする</button>
-    <button class="btn ghost" id="settingsBtn" type="button" title="設定と保存状況">⚙ 設定</button>
+    <button class="btn ghost" id="installBtn" type="button" title="アプリにする">⬇<span class="lbl"> アプリにする</span></button>
+    <button class="btn ghost" id="settingsBtn" type="button" title="設定と保存状況">⚙<span class="lbl"> 設定</span></button>
   </div>
   <div class="meta" id="metaBox" hidden>
     <input id="fTitle" data-f="title" placeholder="講義のタイトル">

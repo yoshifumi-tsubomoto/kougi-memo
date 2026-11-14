@@ -101,6 +101,7 @@ await step('広く表示・文字起こしをたたむ（開き直しても保�
   await p.click('[data-tab="vLive"]');
   await p.click('#focusBtn');
   if (await p.isVisible('#metaBox')) throw new Error('講義の情報が隠れない');
+  if (!(await p.evaluate(() => !!document.querySelector('header #ctrl')))) throw new Error('セッション操作が上の帯に入らない');
   await p.click('#txClose');
   if (await p.isVisible('#tScroll')) throw new Error('文字起こしがたためない');
   await p.reload();
@@ -108,6 +109,7 @@ await step('広く表示・文字起こしをたたむ（開き直しても保�
   if (await p.isVisible('#metaBox') || await p.isVisible('#tScroll')) throw new Error('開き直すと元に戻る');
   await p.click('#txOpen'); await p.click('#focusBtn');
   if (!(await p.isVisible('#metaBox')) || !(await p.isVisible('#tScroll'))) throw new Error('元に戻せない');
+  if (await p.evaluate(() => !!document.querySelector('header #ctrl'))) throw new Error('セッション操作が元の場所に戻らない');
 });
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');

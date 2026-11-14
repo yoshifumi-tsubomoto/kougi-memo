@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.4.0';
+export const APP_VERSION = '0.4.1';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -408,10 +408,13 @@ function autosize() {
 const VIEW = Object.assign({ focus: false, tx: true }, ls('view') || {});
 function applyView() {
   document.body.classList.toggle('focus', VIEW.focus);
+  // 広く表示：タブとセッション操作を上の帯へ。戻すときは元の場所へ
+  if (VIEW.focus) { $('#focusSlot').append($('#tabs'), $('#ctrl')); }
+  else { $('#metaBox').after($('#tabs')); $('header').after($('#ctrl')); }
   $('#vLive').classList.toggle('tx-off', !VIEW.tx);
   const fb = $('#focusBtn');
   fb.setAttribute('aria-pressed', String(VIEW.focus));
-  fb.textContent = VIEW.focus ? '⤡ 元の表示' : '⤢ 広く表示';
+  fb.innerHTML = VIEW.focus ? '⤡<span class="lbl"> 元の表示</span>' : '⤢<span class="lbl"> 広く表示</span>';
   fb.title = VIEW.focus ? '隠した講義の情報や表示を元に戻します' : '講義の情報や表示を隠して、記録の画面を広くします';
   $('#memoIn').style.height = ''; autosize();
 }

@@ -119,6 +119,19 @@ body.focus .ctrl{margin-top:8px;padding:6px 14px}
 body.focus .ind > span > span{display:none}
 body.focus .ind > span{padding:4px 7px}
 body.focus #vLive.on{padding-top:10px}
+/* 広く表示のときは、タブとセッション操作を上の帯に入れて1行にまとめる */
+.slot{display:contents}
+body.focus header{padding-bottom:10px}
+body.focus #tabs{padding-bottom:0}
+body.focus #ctrl{margin:0;padding:0 0 0 6px;background:none;border:0;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none;gap:8px;border-left:1px solid var(--line)}
+body.focus #ctrl .sess{padding:0 10px}
+body.focus #ctrl .el{font-size:22px}
+body.focus #ctrl .tot{display:none}
+body.focus #ctrl .ind{gap:4px}
+body.focus header .bar > .btn .lbl{display:none}
+body.focus header .bar > .btn{padding-inline:10px}
+body.focus #lecSel{max-width:240px}
+body.focus .bar{gap:6px}
 #focusBtn[aria-pressed="true"]{background:var(--teal-soft);color:var(--teal)}
 .btn.mini{padding:2px 10px;font-size:12px}
 .tx-open{display:none}
