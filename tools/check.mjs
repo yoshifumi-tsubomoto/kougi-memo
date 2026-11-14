@@ -156,7 +156,21 @@ await step('写真の大きさを変えられる（メモ欄・印刷）', async
   if ((await pop.$eval('.memo img', (i) => getComputedStyle(i).float)) !== 'none') throw new Error('大のときに回り込んでしまう');
   await pop.click('#side');
   if ((await pop.$eval('.cols', (c) => getComputedStyle(c).display)) !== 'grid') throw new Error('横に並ばない');
+  if (!(await pop.$('h1'))) throw new Error('印刷画面が真っ白');
   await pop.close();
+  // 設定を覚えている（もう一度開くと「大」「横に並べる」のまま）
+  const [pop2] = await Promise.all([p.waitForEvent('popup'), p.click('[data-act="print"]')]);
+  await pop2.waitForSelector('h1');
+  if (!(await pop2.isChecked('.bar input[value="l"]')) || !(await pop2.isChecked('#side'))) throw new Error('印刷の設定を覚えていない');
+  await pop2.close();
+  // ポップアップが止められたときは、押して開くリンクが出る
+  await p.evaluate(() => { window.__open = window.open; window.open = () => null; });
+  await p.click('[data-act="print"]');
+  await p.waitForSelector('.print-link');
+  const [pop3] = await Promise.all([p.waitForEvent('popup'), p.click('.print-link')]);
+  await pop3.waitForSelector('h1');
+  await pop3.close();
+  await p.evaluate(() => { window.open = window.__open; });
   await p.click('[data-tab="vLive"]');
 });
 // スマホとの連携（手元に仲介サーバーを立てて、PCとスマホの2つの画面で確かめる）

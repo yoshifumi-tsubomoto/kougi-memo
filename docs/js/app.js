@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.4.4';
+export const APP_VERSION = '0.4.5';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -415,7 +415,7 @@ function autosize() {
 }));
 
 /* ============================== 表示の切り替え（広く表示・文字起こしをたたむ） ============================== */
-const VIEW = Object.assign({ focus: false, tx: true, memoH: 0, photo: 'm', printPhoto: 'm' }, ls('view') || {});
+const VIEW = Object.assign({ focus: false, tx: true, memoH: 0, photo: 'm' }, ls('view') || {});
 function applyView() {
   document.body.classList.toggle('focus', VIEW.focus);
   // 広く表示：タブとセッション操作を上の帯へ。戻すときは元の場所へ
@@ -556,9 +556,13 @@ const PHOTO_SIZES = [
   { k: 'l', label: '大', print: 62, feed: 300 },
   { k: 'xl', label: '幅いっぱい', print: 100, feed: 0 },
 ];
-async function printView() {
-  const w = window.open('', '_blank');
-  if (!w) { toast('ポップアップが止められました。許可してからもう一度押してください'); return; }
+/* 印刷画面の設定（印刷画面の側からも書き換えるので、別の場所に保存する） */
+const PRINT_KEY = 'kougi-print';
+const printPrefs = () => { try { return Object.assign({ photo: 'm', side: false, wrap: true }, JSON.parse(localStorage.getItem(PRINT_KEY) || '{}')); } catch { return { photo: 'm', side: false, wrap: true }; } };
+async function printView(btn) {
+  // 印刷画面のページを先に作り、できあがってから開く。
+  // （空の窓を開いて後から書き込む方法だと、アプリとして入れた窓から開いたときに真っ白になる）
+  toast('印刷画面を準備しています…');
   const L = S.lec;
   let body = `<h1>${esc(L.title || '無題の講義')}</h1><p class="meta">講師：${esc(L.speaker)}　日付：${esc(L.date)}　会場：${esc(L.venue)}</p>`;
   for (const s of exportGroups()) {
@@ -579,11 +583,13 @@ async function printView() {
     // 縦に並べる：メモ→文字起こし。横に並べる：左に文字起こし、右にメモ
     if (memoHtml || txHtml) body += `<div class="cols"><div class="col-tx">${txHtml}</div><div class="col-memo">${memoHtml}</div></div>`;
   }
-  const size = VIEW.printPhoto || 'm';
-  const side = VIEW.printSide ? ' side' : '';
+  const pp = printPrefs();
+  const size = PHOTO_SIZES.some((p) => p.k === pp.photo) ? pp.photo : 'm';
+  const side = pp.side ? ' side' : '';
+  const wrap = pp.wrap ? ' wrap' : '';
   const opts = PHOTO_SIZES.map((p) => `<label><input type="radio" name="sz" value="${p.k}" ${p.k === size ? 'checked' : ''}> ${p.label}</label>`).join('');
   const css = PHOTO_SIZES.map((p) => `body.sz-${p.k} .memo img{width:${p.print}%}` + (p.print <= 50 ? `body.sz-${p.k}.wrap .memo img{float:left;margin:4px 16px 8px 0}` : '')).join('\n');
-  w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(L.title || '講義メモ')}</title>
+  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(L.title || '講義メモ')}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap"><style>
 body{font-family:"BIZ UDPGothic","Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;max-width:760px;margin:0 auto;padding:0 16px 24px;line-height:1.75;color:#111}
 h1{font-size:22px;margin:20px 0 4px}h2{font-size:17px;border-bottom:2px solid #1B3A6B;padding-bottom:4px;margin-top:28px;clear:both}h3{font-size:14px;color:#1B3A6B;clear:both}
@@ -601,24 +607,26 @@ body.side .cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr
 body.side .col-tx{order:0}body.side .col-memo{order:0;border-left:1px solid #D9E2EC;padding-left:20px}
 body.side .col-tx:empty,body.side .col-memo:empty{display:none}
 @page{margin:14mm}
-</style></head><body class="sz-${size} wrap${side}">
-<div class="bar"><b>写真の大きさ</b>${opts}<label><input type="checkbox" id="wrap" checked> 写真の横に文字を回り込ませる</label><span class="hint">（小・中のとき）</span><label><input type="checkbox" id="side"${side ? ' checked' : ''}> 文字起こしとメモを横に並べる</label><span class="hint">（印刷は横向きがおすすめ）</span><span style="flex:1"></span><button type="button" id="pr">印刷・PDFに保存</button></div>
+</style></head><body class="sz-${size}${wrap}${side}">
+<div class="bar"><b>写真の大きさ</b>${opts}<label><input type="checkbox" id="wrap"${wrap ? ' checked' : ''}> 写真の横に文字を回り込ませる</label><span class="hint">（小・中のとき）</span><label><input type="checkbox" id="side"${side ? ' checked' : ''}> 文字起こしとメモを横に並べる</label><span class="hint">（印刷は横向きがおすすめ）</span><span style="flex:1"></span><button type="button" id="pr">印刷・PDFに保存</button></div>
 ${body}
 <script>
-document.querySelectorAll('input[name=sz]').forEach(function(r){r.onchange=function(){document.body.className=document.body.className.replace(/sz-\\w+/,'sz-'+r.value);try{opener&&opener.postMessage({kougiPrintPhoto:r.value},'*')}catch(e){}}});
-document.getElementById('wrap').onchange=function(e){document.body.classList.toggle('wrap',e.target.checked)};
-document.getElementById('side').onchange=function(e){document.body.classList.toggle('side',e.target.checked);try{opener&&opener.postMessage({kougiPrintSide:e.target.checked},'*')}catch(x){}};
+function save(k,v){try{var o=JSON.parse(localStorage.getItem('${PRINT_KEY}')||'{}');o[k]=v;localStorage.setItem('${PRINT_KEY}',JSON.stringify(o))}catch(e){}}
+document.querySelectorAll('input[name=sz]').forEach(function(r){r.onchange=function(){document.body.className=document.body.className.replace(/sz-\\w+/,'sz-'+r.value);save('photo',r.value)}});
+document.getElementById('wrap').onchange=function(e){document.body.classList.toggle('wrap',e.target.checked);save('wrap',e.target.checked)};
+document.getElementById('side').onchange=function(e){document.body.classList.toggle('side',e.target.checked);save('side',e.target.checked)};
 document.getElementById('pr').onclick=function(){print()};
-<\/script></body></html>`);
-  w.document.close();
+<\/script></body></html>`;
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+  const w = window.open(url, '_blank');
+  if (!w && btn) {
+    // ポップアップが止められたときは、押して開くリンクを出す
+    btn.parentElement.querySelector('.print-link')?.remove();
+    btn.insertAdjacentHTML('afterend', `<a class="btn primary print-link" href="${url}" target="_blank" rel="noopener">印刷画面を開く</a>`);
+    toast('「印刷画面を開く」を押してください');
+  }
 }
-// 印刷画面で選んだ写真の大きさを覚える
-window.addEventListener('message', (e) => {
-  if (e.origin !== location.origin && e.origin !== 'null') return;
-  const v = e.data && e.data.kougiPrintPhoto;
-  if (PHOTO_SIZES.some((p) => p.k === v)) setView({ printPhoto: v });
-  if (e.data && typeof e.data.kougiPrintSide === 'boolean') setView({ printSide: e.data.kougiPrintSide });
-});
 async function exportFolder() {
   let dir;
   try { dir = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch { return; }
@@ -752,7 +760,7 @@ document.addEventListener('click', async (e) => {
     case 'link-new': newLinkId(); break;
     case 'link-copy': toast((await copyText($('#qrUrl').textContent)) ? 'URLをコピーしました' : 'コピーできませんでした'); break;
     case 'md': download(new Blob([toMarkdown()], { type: 'text/markdown' }), `${S.lec.date}_${safeName(S.lec.title)}.md`); break;
-    case 'print': printView(); break;
+    case 'print': printView(b); break;
     case 'folder': exportFolder(); break;
     case 'backup': {
       b.disabled = true;
