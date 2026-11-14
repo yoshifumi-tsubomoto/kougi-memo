@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>講義メモ</title>
+<meta name="description" content="講義・研修・講演会を、まるごと記録してセッションごとにまとめる">
+<meta name="theme-color" content="#0F5257">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="update" id="updateBar" hidden>新しい版があります。<button class="btn primary" type="button" id="updateBtn">更新する</button></div>
+
+<header>
+  <div class="bar">
+    <span class="brand">講義メモ</span>
+    <select id="lecSel" aria-label="講義を選ぶ"></select>
+    <button class="btn" id="newBtn" type="button">＋ 新しい講義</button>
+    <span class="sp"></span>
+    <button class="btn ghost" id="installBtn" type="button" hidden>⬇ アプリとして入れる</button>
+    <button class="btn ghost" id="settingsBtn" type="button" title="設定と保存状況">⚙ 設定</button>
+  </div>
+  <div class="meta" id="metaBox" hidden>
+    <input id="fTitle" data-f="title" placeholder="講義のタイトル">
+    <input id="fSpeaker" data-f="speaker" placeholder="講師">
+    <input id="fDate" data-f="date" type="date" aria-label="日付">
+    <input id="fVenue" data-f="venue" placeholder="会場・形式">
+  </div>
+  <div class="tabs" id="tabs" hidden>
+    <button class="tab on" type="button" data-tab="vLive">記録</button>
+    <button class="tab" type="button" data-tab="vSum">まとめ・出力</button>
+  </div>
+</header>
+
+<div class="ctrl" id="ctrl" hidden>
+  <div class="sess"><span class="sname" id="sName">開始前</span><span class="el" id="sEl">0:00</span><span class="tot" id="sTot"></span></div>
+  <div id="ctrlBtns" class="bar"></div>
+  <span class="sp"></span>
+  <div class="ind">
+    <span><i class="dot" id="dSpeech"></i><span id="tSpeech">音声認識 停止</span></span>
+    <span><i class="dot" id="dRec"></i><span id="tRec">録音 停止</span></span>
+  </div>
+</div>
+
+<main class="welcome" id="welcome" hidden>
+  <h1>講義メモ</h1>
+  <p class="lead">講義・研修・講演会を、まるごと記録してセッションごとにまとめます。</p>
+  <ol>
+    <li>「新しい講義」を作り、タイトルと講師を入れる</li>
+    <li>始まったら「セッション開始」。文字起こしと録音が自動で進みます</li>
+    <li>気づいたことはメモに。写真は貼り付け・ドラッグでも追加できます</li>
+    <li>終わったら「まとめ・出力」で、セッションごとに要約して書き出し</li>
+  </ol>
+  <div><button class="btn primary" type="button" id="newBtn2">＋ 新しい講義</button></div>
+  <p class="note">記録はこのブラウザの中だけに保存されます。インターネットに送られるのは、Chromeの音声認識が使う音声だけです。</p>
+</main>
+
+<section class="view" id="vLive">
+  <div class="pane">
+    <h2>文字起こし（リアルタイム）<span class="sp"></span><label class="small"><input type="checkbox" id="autoScroll" checked> 自動スクロール</label></h2>
+    <div class="scroll" id="tScroll"><div id="tList"></div><div class="tline interim" id="interim" hidden><span class="tm">…</span><span class="tx"></span></div></div>
+  </div>
+  <div class="pane" id="memoPane">
+    <h2>メモ・写真<span class="sp"></span><span class="small" id="feedCount"></span></h2>
+    <div class="scroll" id="fScroll"><ul class="feed" id="feed"></ul></div>
+    <div class="composer">
+      <div class="types" id="types"></div>
+      <div class="row">
+        <textarea id="memoIn" rows="1" placeholder="気づいたことを書いて Enter（Shift+Enterで改行）"></textarea>
+        <label class="btn icon" title="写真を追加">🖼<input type="file" id="imgIn" accept="image/*" multiple hidden></label>
+        <button class="btn primary" type="button" id="memoBtn">追加</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="view" id="vSum"><div class="sumwrap" id="sumWrap"></div></section>
+
+<div class="modal" id="settings" hidden>
+  <div class="box left">
+    <h3>設定と保存状況</h3>
+    <div id="storeInfo" class="small"></div>
+    <h4>清書（高精度の文字起こし）の方法</h4>
+    <div class="engines" id="engines"></div>
+    <h4>このアプリについて</h4>
+    <p class="small">記録はこのブラウザの中（IndexedDB）に保存されます。別のPCやブラウザとは共有されません。ブラウザの「閲覧履歴データの削除」でサイトデータを消すと、記録も消えます。大事な記録は「まとめ・出力」からフォルダに書き出してください。</p>
+    <p class="small muted" id="version"></p>
+    <div><button class="btn" type="button" data-close>閉じる</button></div>
+  </div>
+</div>
+<div class="modal" id="imgModal" hidden><div class="box img"><img id="bigImg" alt=""></div></div>
+<div class="toast" id="toast" hidden></div>
+<div class="drop" id="drop" hidden>ここに写真をドロップ</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

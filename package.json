@@ -2,18 +2,10 @@
   "name": "kougi-memo",
   "version": "0.1.0",
   "private": true,
-  "description": "講義メモ：リアルタイム文字起こし・録音・スマホ写真連携・セッション要約（Google Apps Script）",
+  "description": "講義メモ：講義・研修・講演会を、まるごと記録してセッションごとにまとめる（ブラウザで動くアプリ）",
   "type": "module",
   "scripts": {
-    "login": "clasp login",
-    "push": "clasp push",
-    "watch": "clasp push --watch",
-    "open": "clasp open",
-    "deploy": "clasp deploy --description",
-    "preview": "node tools/preview.mjs",
-    "check": "node tools/preview.mjs && node tools/check.mjs"
-  },
-  "devDependencies": {
-    "@google/clasp": "^2.4.2"
+    "start": "node tools/serve.mjs",
+    "check": "node tools/check.mjs"
   }
 }
