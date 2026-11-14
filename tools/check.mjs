@@ -89,6 +89,31 @@ await step('デザインを切り替えて、開き直しても保たれる', as
   await p.click('.look:has(input[value="aurora"])');
   await p.click('#settings [data-close]');
 });
+await step('メモを追加した直後に打った文字が消えない', async () => {
+  await p.fill('#memoIn', '一つ目');
+  await p.press('#memoIn', 'Enter');
+  await p.type('#memoIn', '続き');
+  await p.waitForTimeout(400);
+  if ((await p.inputValue('#memoIn')) !== '続き') throw new Error('打った文字が消えた：' + await p.inputValue('#memoIn'));
+  await p.fill('#memoIn', '');
+});
+await step('広く表示・文字起こしをたたむ（開き直しても保たれる）', async () => {
+  await p.click('[data-tab="vLive"]');
+  await p.click('#focusBtn');
+  if (await p.isVisible('#metaBox')) throw new Error('講義の情報が隠れない');
+  await p.click('#txClose');
+  if (await p.isVisible('#tScroll')) throw new Error('文字起こしがたためない');
+  await p.reload();
+  await p.waitForSelector('#focusBtn:not([hidden])');
+  if (await p.isVisible('#metaBox') || await p.isVisible('#tScroll')) throw new Error('開き直すと元に戻る');
+  await p.click('#txOpen'); await p.click('#focusBtn');
+  if (!(await p.isVisible('#metaBox')) || !(await p.isVisible('#tScroll'))) throw new Error('元に戻せない');
+});
+await step('アプリにする方法を案内できる', async () => {
+  await p.click('#installBtn');
+  await p.waitForSelector('#installModal:not([hidden]) .step.here');
+  await p.click('#installModal [data-close]');
+});
 await step('写真の撮影時刻を読んで、その時刻の位置に並べる', async () => {
   await p.click('[data-tab="vLive"]');
   await p.setInputFiles('#imgIn', { name: 'slide.jpg', mimeType: 'image/jpeg', buffer: await jpegWithExif(p, '2026:11:14 09:30:00') });
@@ -97,6 +122,15 @@ await step('写真の撮影時刻を読んで、その時刻の位置に並べ�
   if (!row.includes('09:30:00') || !row.includes('撮影時刻で配置')) throw new Error('撮影時刻で並んでいない：' + row.trim().slice(0, 60));
 });
 
+await step('拡大した写真を、写真を押しても Esc でも閉じられる', async () => {
+  await p.click('#feed img');
+  await p.waitForSelector('#imgModal:not([hidden])');
+  await p.click('#bigImg');
+  if (await p.isVisible('#imgModal')) throw new Error('写真を押しても閉じない');
+  await p.click('#feed img');
+  await p.keyboard.press('Escape');
+  if (await p.isVisible('#imgModal')) throw new Error('Esc で閉じない');
+});
 // スマホとの連携（手元に仲介サーバーを立てて、PCとスマホの2つの画面で確かめる）
 let peerServer = null;
 try {

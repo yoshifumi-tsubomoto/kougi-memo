@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -286,8 +286,11 @@ async function newLinkId() {
 async function addMemo() {
   const ta = $('#memoIn'); const text = ta.value.trim(); if (!text || !S.lec) return;
   const at = Date.now(); const s = sessionAt(at) || openSession();
-  const m = await store.addMemo(S.lec.id, { at, sessionId: s ? s.id : '', type: S.type, text });
-  S.memos.push(m); ta.value = ''; autosize(); renderFeed(true);
+  ta.value = ''; autosize();   // 保存を待たずに空にする（続けて打った文字が消えないように）
+  let m;
+  try { m = await store.addMemo(S.lec.id, { at, sessionId: s ? s.id : '', type: S.type, text }); }
+  catch (e) { if (!ta.value) { ta.value = text; autosize(); } toast('メモを保存できませんでした：' + errMsg(e)); return; }
+  S.memos.push(m); renderFeed(true);
   markChanged();
 }
 async function removeMemo(id) {
@@ -323,10 +326,10 @@ async function imageUrl(imageId) {
 }
 
 /* ============================== 表示 ============================== */
-function setInd(k, cls, text) { $('#d' + k).className = 'dot' + (cls ? ' ' + cls : ''); $('#t' + k).textContent = text; }
+function setInd(k, cls, text) { $('#d' + k).className = 'dot' + (cls ? ' ' + cls : ''); $('#t' + k).textContent = text; $('#d' + k).parentElement.title = text; }
 function render(full) {
   const has = !!S.lec;
-  $('#welcome').hidden = has; $('#metaBox').hidden = !has; $('#linkBtn').hidden = !has; $('#tabs').hidden = !has; $('#ctrl').hidden = !has || S.tab !== 'vLive';
+  $('#welcome').hidden = has; $('#metaBox').hidden = !has; $('#linkBtn').hidden = !has; $('#focusBtn').hidden = !has; $('#tabs').hidden = !has; $('#ctrl').hidden = !has || S.tab !== 'vLive';
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', has && v.id === S.tab));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === S.tab));
   if (!has) return;
@@ -395,7 +398,27 @@ function renderFeed(scroll) {
 function renderTypes() {
   $('#types').innerHTML = TYPES.map((t, i) => `<button type="button" class="chip${S.type === t.k ? ' on' : ''}" data-type="${t.k}" title="Alt+${i + 1}">${t.label}</button>`).join('');
 }
-function autosize() { const ta = $('#memoIn'); ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, 140) + 'px'; }
+function autosize() {
+  const ta = $('#memoIn'); ta.style.height = 'auto';
+  const min = parseFloat(getComputedStyle(ta).minHeight) || 0;
+  ta.style.height = Math.max(min, Math.min(ta.scrollHeight + 4, window.innerHeight * 0.45)) + 'px';
+}
+
+/* ============================== 表示の切り替え（広く表示・文字起こしをたたむ） ============================== */
+const VIEW = Object.assign({ focus: false, tx: true }, ls('view') || {});
+function applyView() {
+  document.body.classList.toggle('focus', VIEW.focus);
+  $('#vLive').classList.toggle('tx-off', !VIEW.tx);
+  const fb = $('#focusBtn');
+  fb.setAttribute('aria-pressed', String(VIEW.focus));
+  fb.textContent = VIEW.focus ? '⤡ 元の表示' : '⤢ 広く表示';
+  fb.title = VIEW.focus ? '隠した講義の情報や表示を元に戻します' : '講義の情報や表示を隠して、記録の画面を広くします';
+  $('#memoIn').style.height = ''; autosize();
+}
+function setView(patch) { Object.assign(VIEW, patch); ls('view', VIEW); applyView(); }
+$('#focusBtn').addEventListener('click', () => setView({ focus: !VIEW.focus }));
+$('#txClose').addEventListener('click', () => setView({ tx: false }));
+$('#txOpen').addEventListener('click', () => { setView({ tx: true }); scrollBottom('#tScroll'); });
 
 /* ============================== まとめ・出力 ============================== */
 function sessionText(s) {
@@ -574,6 +597,7 @@ async function openSettings() {
     <div style="margin-top:6px">${info.persisted ? '✅ ブラウザに記録を消されにくい設定になっています' : '⚠ ブラウザが容量不足のときに記録を消すことがあります。「アプリとして入れる」と消されにくくなります'}</div>
     <div style="margin-top:6px">${left.length ? `⚠ まだ書き出していない講義が <b>${left.length}</b> 件あります（講義の一覧で「●」の付いたもの）` : '✓ すべての講義を書き出し済みです'}</div>
     <div class="sumrow" style="margin-top:8px"><label class="btn">バックアップを読み込む<input type="file" id="importIn" accept=".json,application/json" hidden></label></div>`;
+  refreshInstall();
   $('#looks').innerHTML = LOOKS.map((l) => `<label class="look"><input type="radio" name="look" value="${l.k}" ${currentLook() === l.k ? 'checked' : ''}><span class="sw ${l.k}"></span><span><b>${l.label}</b><small>${l.note}</small></span></label>`).join('');
   const cur = ls('engine') || 'none';
   $('#engines').innerHTML = ENGINES.map((e) => `<label class="${e.ready ? '' : 'off'}"><input type="radio" name="engine" value="${e.k}" ${cur === e.k ? 'checked' : ''} ${e.ready ? '' : 'disabled'}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
@@ -601,6 +625,7 @@ $('#memoBtn').addEventListener('click', addMemo);
 $('#imgIn').addEventListener('change', (e) => { addImages([...e.target.files]); e.target.value = ''; });
 $('#settingsBtn').addEventListener('click', openSettings);
 $('#linkBtn').addEventListener('click', openLink);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal:not([hidden])').forEach((m) => (m.hidden = true)); });
 document.addEventListener('keydown', (e) => { if (e.altKey && /^[1-5]$/.test(e.key) && S.lec) { e.preventDefault(); S.type = TYPES[+e.key - 1].k; renderTypes(); } });
 document.addEventListener('paste', (e) => {
   const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
@@ -625,7 +650,7 @@ document.addEventListener('change', async (e) => {
 
 let player = null;
 document.addEventListener('click', async (e) => {
-  if (e.target.closest('[data-close]') || e.target.classList.contains('modal')) { e.target.closest('.modal').hidden = true; return; }
+  if (e.target.closest('[data-close]') || e.target.classList.contains('modal') || e.target.closest('#imgModal')) { e.target.closest('.modal').hidden = true; return; }
   const img = e.target.closest('.fi img'); if (img && img.src) { $('#bigImg').src = img.src; $('#imgModal').hidden = false; return; }
   const del = e.target.closest('[data-del]'); if (del) { removeMemo(del.dataset.del); return; }
   const b = e.target.closest('[data-act]'); if (!b) return;
@@ -651,6 +676,7 @@ document.addEventListener('click', async (e) => {
     case 'nudge-folder': S.tab = 'vSum'; render(); if (window.showDirectoryPicker) exportFolder(); break;
     case 'nudge-backup': S.tab = 'vSum'; render(); break;
     case 'nudge-close': $('#nudge').hidden = true; break;
+    case 'install': $('#settings').hidden = true; doInstall(); break;
     case 'link-stop': stopLink(); $('#linkModal').hidden = true; toast('スマホとの連携を止めました'); break;
     case 'link-new': newLinkId(); break;
     case 'link-copy': toast((await copyText($('#qrUrl').textContent)) ? 'URLをコピーしました' : 'コピーできませんでした'); break;
@@ -691,8 +717,46 @@ document.addEventListener('click', async (e) => {
 
 /* ============================== アプリとして入れる・更新の知らせ ============================== */
 let installEvt = null;
-window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; $('#installBtn').hidden = false; });
-$('#installBtn').addEventListener('click', async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#installBtn').hidden = true; store.requestPersist(); });
+const isApp = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: window-controls-overlay)').matches || navigator.standalone === true;
+function browserKind() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+  if (/Android/.test(ua)) return 'android';
+  if (/Edg\//.test(ua)) return 'edge';
+  if (/Chrome\//.test(ua)) return 'chrome';
+  return 'other';
+}
+const INSTALL_STEPS = [
+  { k: 'chrome', t: 'パソコンの Chrome', d: 'アドレスバーの右端にある「インストール」のマーク（画面に下向き矢印）を押す。見当たらないときは、右上の「⋮」→「キャスト、保存、共有」→「ページをアプリとしてインストール」。' },
+  { k: 'edge', t: 'パソコンの Edge', d: 'アドレスバーの右端にある「アプリを利用できます」のマークを押す。見当たらないときは、右上の「…」→「アプリ」→「このサイトをアプリとしてインストール」。' },
+  { k: 'android', t: 'Android の Chrome', d: '右上の「⋮」→「アプリをインストール」（または「ホーム画面に追加」）。' },
+  { k: 'ios', t: 'iPhone・iPad の Safari', d: '下の「共有」ボタン（四角から上向き矢印）→「ホーム画面に追加」。※iPhoneでは文字起こしは使えません。スマホ連携の送信用にどうぞ。' },
+];
+async function doInstall() {
+  if (installEvt) {
+    installEvt.prompt();
+    const r = await installEvt.userChoice.catch(() => null);
+    installEvt = null;
+    if (r && r.outcome === 'accepted') { store.requestPersist(); toast('アプリとして登録しました'); refreshInstall(); }
+    return;
+  }
+  const here = browserKind();
+  $('#installSteps').innerHTML = INSTALL_STEPS.map((s) => `<div class="step${s.k === here ? ' here' : ''}"><b>${s.k === here ? 'いま使っている：' : ''}${s.t}</b>${s.d}</div>`).join('')
+    + (here === 'other' ? '<p class="note">いまのブラウザでは、アプリとして登録できないことがあります。Chrome か Edge で開いてください。</p>' : '');
+  $('#installModal').hidden = false;
+}
+function refreshInstall() {
+  const app = isApp();
+  $('#installBtn').hidden = app;
+  const row = $('#installRow');
+  if (row) row.innerHTML = app ? '<span class="state ok">✓ アプリとして開いています</span>'
+    : '<button class="btn primary" type="button" data-act="install">⬇ アプリにする</button><span class="small muted">専用の窓で開け、記録も消されにくくなります</span>';
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
+window.addEventListener('appinstalled', () => { installEvt = null; store.requestPersist(); refreshInstall(); });
+$('#installBtn').addEventListener('click', doInstall);
+refreshInstall();
+applyView();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').then((reg) => {

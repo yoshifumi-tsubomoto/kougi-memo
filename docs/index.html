@@ -25,7 +25,8 @@
     <button class="btn" id="newBtn" type="button">＋ 新しい講義</button>
     <span class="sp"></span>
     <button class="btn" id="linkBtn" type="button" hidden>📱 スマホ</button>
-    <button class="btn ghost" id="installBtn" type="button" hidden>⬇ アプリとして入れる</button>
+    <button class="btn ghost" id="focusBtn" type="button" aria-pressed="false" title="講義の情報や表示を隠して、記録の画面を広くします" hidden>⤢ 広く表示</button>
+    <button class="btn ghost" id="installBtn" type="button">⬇ アプリにする</button>
     <button class="btn ghost" id="settingsBtn" type="button" title="設定と保存状況">⚙ 設定</button>
   </div>
   <div class="meta" id="metaBox" hidden>
@@ -75,8 +76,9 @@
 </main>
 
 <section class="view" id="vLive">
-  <div class="pane">
-    <h2><span class="en">TRANSCRIPT</span>文字起こし<span class="sp"></span><label class="small"><input type="checkbox" id="autoScroll" checked> 自動スクロール</label></h2>
+  <div class="pane" id="txPane">
+    <button class="tx-open" type="button" id="txOpen" title="文字起こしを表示する">▶ 文字起こし</button>
+    <h2><span class="en">TRANSCRIPT</span>文字起こし<span class="sp"></span><label class="small"><input type="checkbox" id="autoScroll" checked> 自動スクロール</label><button class="btn ghost mini" type="button" id="txClose" title="文字起こしを隠して、メモを広くします">◀ たたむ</button></h2>
     <div class="scroll" id="tScroll"><div id="tList"></div><div class="tline interim" id="interim" hidden><span class="tm">…</span><span class="tx"></span></div></div>
   </div>
   <div class="pane" id="memoPane">
@@ -100,6 +102,8 @@
     <h3>設定と保存状況</h3>
     <h4>デザイン</h4>
     <div class="looks" id="looks" role="radiogroup" aria-label="デザイン"></div>
+    <h4>アプリとして使う</h4>
+    <div class="sumrow" id="installRow"></div>
     <h4>保存の状況</h4>
     <div id="storeInfo" class="small"></div>
     <h4>清書（高精度の文字起こし）の方法</h4>
@@ -133,7 +137,16 @@
     </div>
   </div>
 </div>
-<div class="modal" id="imgModal" hidden><div class="box img"><img id="bigImg" alt=""></div></div>
+<div class="modal" id="installModal" hidden>
+  <div class="box left">
+    <h3>アプリにする</h3>
+    <p class="small">講義メモを「アプリ」として登録すると、デスクトップやホーム画面から専用の窓で開けます。ネットがなくても開け、ブラウザに記録を消されにくくなります。パソコンにソフトを入れるわけではありません。</p>
+    <div id="installSteps" class="steps"></div>
+    <p class="note">登録したあとも、記録はこれまでと同じブラウザの中に保存されます。</p>
+    <div><button class="btn" type="button" data-close>閉じる</button></div>
+  </div>
+</div>
+<div class="modal" id="imgModal" hidden title="押すと閉じます"><div class="box img"><img id="bigImg" alt=""><button class="close-x" type="button" data-close aria-label="閉じる">×</button></div></div>
 <div class="toast" id="toast" hidden></div>
 <div class="drop" id="drop" hidden>ここに写真をドロップ</div>
 
