@@ -95,6 +95,7 @@ export async function addTranscript(lectureId, row) {
 
 /* ---------- メモ・写真 ---------- */
 export async function addMemo(lectureId, memo) {
+  if (memo.id && !memo.imageId) { const dup = await tx(['memos'], 'readonly', (t) => done(t.objectStore('memos').get(memo.id))); if (dup) return dup; }
   const m = { id: memo.id || newId(), lectureId, sessionId: memo.sessionId || '', at: memo.at || Date.now(), type: memo.type || 'memo',
     text: memo.text || '', imageId: memo.imageId || '', from: memo.from || 'pc', createdAt: Date.now() };
   await tx(['memos'], 'readwrite', (t) => done(t.objectStore('memos').put(m)));
@@ -115,10 +116,11 @@ export async function deleteMemo(id) {
     t.objectStore('memos').delete(id);
   });
 }
-export async function addImage(lectureId, { blob, at, sessionId, text }) {
+export async function addImage(lectureId, { blob, at, sessionId, text, id, from }) {
+  if (id) { const dup = await tx(['memos'], 'readonly', (t) => done(t.objectStore('memos').get(id))); if (dup) return dup; }   // 送り直しで同じものが来たとき
   const imageId = newId();
   await tx(['images'], 'readwrite', (t) => done(t.objectStore('images').put({ id: imageId, lectureId, blob, at })));
-  return addMemo(lectureId, { at, sessionId, type: 'photo', text: text || '', imageId });
+  return addMemo(lectureId, { id, at, sessionId, type: 'photo', text: text || '', imageId, from });
 }
 export async function getImage(imageId) {
   const r = await tx(['images'], 'readonly', (t) => done(t.objectStore('images').get(imageId)));

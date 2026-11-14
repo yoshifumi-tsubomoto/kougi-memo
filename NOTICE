@@ -1,7 +1,11 @@
-講義メモ v0.1.0
+講義メモ v0.2.0
 Copyright 2026 坪本 吉史
 https://github.com/yoshifumi-tsubomoto/kougi-memo
 
 このソフトウェアは Apache License 2.0 で配っています（LICENSE を見てください）。
-改変したものを配るときは、このファイルを残し、もとにした版（上の v0.1.0）と、
+改変したものを配るときは、このファイルを残し、もとにした版（上の v0.2.0）と、
 どこを変えたかを書いてください。
+
+このソフトウェアには、次の部品を含みます（どちらも MIT License）。
+- PeerJS 1.5.4（docs/vendor/peerjs.min.js）Copyright (c) 2015 Michelle Bu and Eric Zhang  https://peerjs.com/
+- QR Code Generator for JavaScript 1.4.4（docs/vendor/qrcode.js）Copyright (c) 2009 Kazuhiko Arase

@@ -23,6 +23,7 @@
     <select id="lecSel" aria-label="講義を選ぶ"></select>
     <button class="btn" id="newBtn" type="button">＋ 新しい講義</button>
     <span class="sp"></span>
+    <button class="btn" id="linkBtn" type="button" hidden>📱 スマホ</button>
     <button class="btn ghost" id="installBtn" type="button" hidden>⬇ アプリとして入れる</button>
     <button class="btn ghost" id="settingsBtn" type="button" title="設定と保存状況">⚙ 設定</button>
   </div>
@@ -45,6 +46,7 @@
   <div class="ind">
     <span><i class="dot" id="dSpeech"></i><span id="tSpeech">音声認識 停止</span></span>
     <span><i class="dot" id="dRec"></i><span id="tRec">録音 停止</span></span>
+    <span id="linkInd" hidden><i class="dot" id="dLink"></i><span id="tLink"></span></span>
   </div>
 </div>
 
@@ -101,6 +103,29 @@
     <p class="small">記録はこのブラウザの中（IndexedDB）に保存されます。別のPCやブラウザとは共有されません。ブラウザの「閲覧履歴データの削除」でサイトデータを消すと、記録も消えます。大事な記録は「まとめ・出力」からフォルダに書き出してください。</p>
     <p class="small muted" id="version"></p>
     <div><button class="btn" type="button" data-close>閉じる</button></div>
+  </div>
+</div>
+<div class="modal" id="linkModal" hidden>
+  <div class="box">
+    <h3>スマホと連携</h3>
+    <div class="qrbox">
+      <div class="qr" id="qr"></div>
+      <div class="linkstate" id="linkState">準備しています…</div>
+      <div class="url" id="qrUrl"></div>
+    </div>
+    <ol class="small" style="margin:0;padding-left:1.3em">
+      <li>スマホのカメラでQRコードを読み、開いたページで写真を撮ります</li>
+      <li>撮った写真やメモが、数秒でこの画面の「メモ・写真」に届きます</li>
+      <li>この画面を閉じても、つながったままです</li>
+    </ol>
+    <p class="note">写真は、スマホからこのPCへ暗号化して直接届きます（つなぐ手続きには無料の仲介サービス PeerJS を使い、直接つながらないときはその中継を通ります。中継でも中身は見えません）。QRコードは、ほかの人に見せないでください。</p>
+    <div class="sumrow">
+      <button class="btn" type="button" data-act="link-copy">URLをコピー</button>
+      <button class="btn" type="button" data-act="link-new">QRコードを作り直す</button>
+      <span class="sp"></span>
+      <button class="btn ghost danger" type="button" data-act="link-stop">連携を止める</button>
+      <button class="btn primary" type="button" data-close>閉じる</button>
+    </div>
   </div>
 </div>
 <div class="modal" id="imgModal" hidden><div class="box img"><img id="bigImg" alt=""></div></div>

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>講義メモ（スマホ）</title>
+<meta name="theme-color" content="#0F5257">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="phone">
+<main class="ph">
+  <header class="ph-head">
+    <div class="small muted">講義メモ・スマホから送る</div>
+    <h1 id="title">PCとつないでいます…</h1>
+    <div class="pill" id="pill"><i class="dot warn"></i><span id="pillText">つないでいます</span></div>
+  </header>
+
+  <div class="ph-help" id="help" hidden></div>
+
+  <label class="ph-big" id="camBtn">📷 写真を撮って送る<input type="file" id="cam" accept="image/*" capture="environment" hidden></label>
+  <label class="btn ph-sub">🖼 アルバムから選んで送る<input type="file" id="lib" accept="image/*" multiple hidden></label>
+
+  <div class="types" id="types"></div>
+  <textarea id="memo" rows="3" placeholder="気づいたこと（写真といっしょに送ると、写真の説明になります）"></textarea>
+  <button class="btn ph-send" type="button" id="sendMemo">メモだけ送る</button>
+
+  <h2 class="ph-h2">送った記録</h2>
+  <ul class="ph-list" id="sent"><li class="empty">送った写真とメモがここに並びます。</li></ul>
+  <p class="note">撮った写真は、このスマホには保存されません。残したいときは、ふつうのカメラで撮ってから「アルバムから選んで送る」を使ってください。</p>
+</main>
+<script type="module" src="js/phone.js"></script>
+</body>
+</html>

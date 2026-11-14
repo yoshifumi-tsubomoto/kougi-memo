@@ -1,7 +1,9 @@
 // 講義メモ：画面とその動き
 import * as store from './store.js';
+import { resizeImage, exifTime } from './media.js';
+import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.2.0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -74,6 +76,7 @@ async function openLecture(id) {
   if (recording()) { toast('記録中は講義を切り替えられません。先にセッションを終了してください'); $('#lecSel').value = S.lec ? S.lec.id : ''; return; }
   Object.values(S.urls).forEach((u) => URL.revokeObjectURL(u)); S.urls = {};
   $('#nudge').hidden = true;
+  stopLink();
   if (!id) { S.lec = null; ls('lastLecture', null); render(); return; }
   const d = await store.getLecture(id);
   if (!d.lecture) { S.lec = null; render(); return; }
@@ -198,14 +201,14 @@ async function startSession() {
   refreshOption();
   await Rec.start();
   keepAwake();
-  renderCtrl(); renderTranscript();
+  renderCtrl(); renderTranscript(); sendInfo();
 }
 async function nextSession() {
   const cur = openSession(); if (cur) cur.end = Date.now();
   S.lec.sessions.push({ id: store.newId(), name: `セッション${sessions().length + 1}`, start: Date.now(), end: null });
   await saveLecture({ sessions: S.lec.sessions });
   Rec.rotate();   // 録音もここで区切る
-  renderCtrl(); renderTranscript();
+  renderCtrl(); renderTranscript(); sendInfo();
 }
 async function endSession() {
   const cur = openSession(); if (cur) cur.end = Date.now();
@@ -214,6 +217,57 @@ async function endSession() {
   renderCtrl();
   await markChanged();
   $('#nudge').hidden = false;   // 書き出しの案内
+  sendInfo();
+}
+
+/* ============================== スマホと連携 ============================== */
+const L = { host: null, state: 'off', phones: 0 };
+const linkInfo = () => { const s = openSession(); return { title: S.lec ? S.lec.title || '無題の講義' : '', session: s ? s.name : '' }; };
+function sendInfo() { if (L.host) L.host.broadcast({ t: 'info', ...linkInfo() }); }
+async function receivePhoto(m) {
+  if (!S.lec || !(m.data instanceof ArrayBuffer || ArrayBuffer.isView(m.data))) throw new Error('受け取れませんでした');
+  const at = Number(m.at) || Date.now();
+  const s = sessionAt(at) || openSession();
+  const blob = new Blob([m.data], { type: m.mime || 'image/jpeg' });
+  const memo = await store.addImage(S.lec.id, { id: String(m.id), blob, at, sessionId: s ? s.id : '', text: String(m.text || ''), from: 'phone' });
+  if (!S.memos.some((x) => x.id === memo.id)) { S.memos.push(memo); renderFeed(true); toast('📱 スマホから写真が届きました'); markChanged(); }
+}
+async function receiveMemo(m) {
+  if (!S.lec) throw new Error('講義が開いていません');
+  const at = Number(m.at) || Date.now();
+  const s = sessionAt(at) || openSession();
+  const type = ['memo', 'key', 'q', 'todo', 'quote'].includes(m.type) ? m.type : 'memo';
+  const memo = await store.addMemo(S.lec.id, { id: String(m.id), at, sessionId: s ? s.id : '', type, text: String(m.text || ''), from: 'phone' });
+  if (!S.memos.some((x) => x.id === memo.id)) { S.memos.push(memo); renderFeed(true); markChanged(); }
+}
+function linkStatus({ state, phones, error }) {
+  Object.assign(L, { state, phones });
+  const text = state === 'off' ? '' : phones ? `📱 スマホ ${phones}台とつながっています`
+    : state === 'waiting' ? '📱 スマホを待っています' : state === 'reconnecting' ? '📱 つなぎ直しています…' : `📱 連携できません（${error}）`;
+  $('#tLink').textContent = text; $('#linkInd').hidden = !text;
+  $('#dLink').className = 'dot ' + (phones ? 'on' : state === 'error' ? 'warn' : '');
+  const st = $('#linkState'); if (st) st.textContent = text || '止まっています';
+  $('#linkBtn').classList.toggle('primary', !!phones);
+}
+async function openLink() {
+  if (!S.lec) return;
+  if (!S.lec.linkId) S.lec = await store.updateLecture(S.lec.id, { linkId: randomLinkId() });
+  const url = phoneUrl(S.lec.linkId);
+  $('#qr').innerHTML = await qrSvg(url).catch(() => '<p class="note">QRコードを作れませんでした。下のURLをスマホで開いてください。</p>');
+  $('#qrUrl').textContent = url;
+  $('#linkModal').hidden = false;
+  if (!L.host) {
+    linkStatus({ state: 'reconnecting', phones: 0 });
+    try { L.host = await startHost(S.lec.linkId, { onPhoto: receivePhoto, onMemo: receiveMemo, onStatus: linkStatus, getInfo: linkInfo }); }
+    catch (e) { linkStatus({ state: 'error', phones: 0, error: errMsg(e) }); }
+  } else linkStatus({ state: L.state, phones: L.phones });
+}
+function stopLink() { if (L.host) { L.host.stop(); L.host = null; } linkStatus({ state: 'off', phones: 0 }); }
+async function newLinkId() {
+  stopLink();
+  S.lec = await store.updateLecture(S.lec.id, { linkId: randomLinkId() });
+  await openLink();
+  toast('新しいQRコードにしました。前のQRコードではつながりません');
 }
 
 /* ============================== メモ・写真 ============================== */
@@ -229,31 +283,24 @@ async function removeMemo(id) {
   markChanged();
   S.memos = S.memos.filter((m) => m.id !== id); renderFeed();
 }
-function resizeImage(file, max = 1600) {
-  return new Promise((res, rej) => {
-    const img = new Image(); const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const k = Math.min(1, max / Math.max(img.width, img.height));
-      const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
-      c.toBlob((b) => (b ? res(b) : rej(new Error('画像を変換できません'))), 'image/jpeg', 0.82);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('画像を読み込めません')); };
-    img.src = url;
-  });
-}
 async function addImages(files) {
   if (!S.lec) { toast('先に講義を選んでください'); return; }
   const text = $('#memoIn').value.trim();
+  let placed = 0;
   for (const f of files) {
     if (!f.type.startsWith('image/')) continue;
     try {
+      // 写真に撮影時刻が入っていれば、その時刻の位置に並べる（あとでまとめて取り込むとき）
+      const now = Date.now();
+      const shot = await exifTime(f);
+      const at = shot && Math.abs(now - shot) > 2 * 60 * 1000 ? shot : now;
       const blob = await resizeImage(f);
-      const at = Date.now(); const s = sessionAt(at) || openSession();
-      const m = await store.addImage(S.lec.id, { blob, at, sessionId: s ? s.id : '', text });
-      S.memos.push(m);
+      const s = sessionAt(at) || (at === now ? openSession() : null);
+      const m = await store.addImage(S.lec.id, { blob, at, sessionId: s ? s.id : '', text, from: at === now ? 'pc' : 'import' });
+      S.memos.push(m); placed += at === now ? 0 : 1;
     } catch (e) { toast('写真を追加できませんでした：' + errMsg(e)); }
   }
+  if (placed) toast(`${placed}枚を、撮った時刻の位置に並べました`);
   if (text) { $('#memoIn').value = ''; autosize(); }
   renderFeed(true);
   markChanged();
@@ -267,7 +314,7 @@ async function imageUrl(imageId) {
 function setInd(k, cls, text) { $('#d' + k).className = 'dot' + (cls ? ' ' + cls : ''); $('#t' + k).textContent = text; }
 function render(full) {
   const has = !!S.lec;
-  $('#welcome').hidden = has; $('#metaBox').hidden = !has; $('#tabs').hidden = !has; $('#ctrl').hidden = !has || S.tab !== 'vLive';
+  $('#welcome').hidden = has; $('#metaBox').hidden = !has; $('#linkBtn').hidden = !has; $('#tabs').hidden = !has; $('#ctrl').hidden = !has || S.tab !== 'vLive';
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', has && v.id === S.tab));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === S.tab));
   if (!has) return;
@@ -327,7 +374,7 @@ function renderFeed(scroll) {
   $('#feed').innerHTML = items.map((m) => {
     const tag = TAGS[m.type];
     return `<li class="fi ${esc(m.type)}"><span class="tm">${hms(m.at)}</span>
-      <div class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}</div>
+      <div class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.from === 'phone' ? '<span class="from"> 📱</span>' : m.from === 'import' ? '<span class="from"> （撮影時刻で配置）</span>' : ''}${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}</div>
       <button class="x" type="button" data-del="${esc(m.id)}" title="削除" aria-label="削除">×</button></li>`;
   }).join('');
   document.querySelectorAll('#feed img[data-img]').forEach(async (img) => { img.src = await imageUrl(img.dataset.img); });
@@ -540,6 +587,7 @@ $('#memoIn').addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode
 $('#memoBtn').addEventListener('click', addMemo);
 $('#imgIn').addEventListener('change', (e) => { addImages([...e.target.files]); e.target.value = ''; });
 $('#settingsBtn').addEventListener('click', openSettings);
+$('#linkBtn').addEventListener('click', openLink);
 document.addEventListener('keydown', (e) => { if (e.altKey && /^[1-5]$/.test(e.key) && S.lec) { e.preventDefault(); S.type = TYPES[+e.key - 1].k; renderTypes(); } });
 document.addEventListener('paste', (e) => {
   const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
@@ -589,6 +637,9 @@ document.addEventListener('click', async (e) => {
     case 'nudge-folder': S.tab = 'vSum'; render(); if (window.showDirectoryPicker) exportFolder(); break;
     case 'nudge-backup': S.tab = 'vSum'; render(); break;
     case 'nudge-close': $('#nudge').hidden = true; break;
+    case 'link-stop': stopLink(); $('#linkModal').hidden = true; toast('スマホとの連携を止めました'); break;
+    case 'link-new': newLinkId(); break;
+    case 'link-copy': toast((await copyText($('#qrUrl').textContent)) ? 'URLをコピーしました' : 'コピーできませんでした'); break;
     case 'md': download(new Blob([toMarkdown()], { type: 'text/markdown' }), `${S.lec.date}_${safeName(S.lec.title)}.md`); break;
     case 'print': printView(); break;
     case 'folder': exportFolder(); break;

@@ -11,6 +11,20 @@ const ctx = await browser.newContext({ permissions: ['microphone'] });
 const p = await ctx.newPage();
 const errors = [];
 p.on('pageerror', (e) => errors.push('スクリプトのエラー：' + e.message));
+/** テスト用の JPEG（at を渡すと撮影時刻 EXIF を入れる） */
+async function jpegWithExif(page, at) {
+  const b64 = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 320; c.height = 200; const g = c.getContext('2d'); g.fillStyle = '#0F5257'; g.fillRect(0, 0, 320, 200); g.fillStyle = '#fff'; g.font = '28px sans-serif'; g.fillText('スライド', 40, 110); return c.toDataURL('image/jpeg').split(',')[1]; });
+  const jpg = Buffer.from(b64, 'base64');
+  if (!at) return jpg;
+  const t = Buffer.alloc(64);
+  t.write('II', 0); t.writeUInt16LE(42, 2); t.writeUInt32LE(8, 4);
+  t.writeUInt16LE(1, 8); t.writeUInt16LE(0x8769, 10); t.writeUInt16LE(4, 12); t.writeUInt32LE(1, 14); t.writeUInt32LE(26, 18); t.writeUInt32LE(0, 22);
+  t.writeUInt16LE(1, 26); t.writeUInt16LE(0x9003, 28); t.writeUInt16LE(2, 30); t.writeUInt32LE(20, 32); t.writeUInt32LE(44, 36); t.writeUInt32LE(0, 40);
+  t.write(at + '\0', 44, 'latin1');
+  const body = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), t]);
+  const head = Buffer.from([0xff, 0xe1, (body.length + 2) >> 8, (body.length + 2) & 0xff]);
+  return Buffer.concat([jpg.subarray(0, 2), head, body, jpg.subarray(2)]);
+}
 const step = async (name, fn) => { try { await fn(); console.log('OK ', name); } catch (e) { errors.push(`${name}：${e.message.split('\n')[0]}`); console.log('NG ', name); } };
 
 await p.goto(base + '?test=1');
@@ -64,7 +78,56 @@ await step('バックアップを書き出すと「書き出し済み」にな�
   if ((await p.locator('#feed .fi').count()) !== 1) throw new Error('読み込み後のメモの数が違う');
 });
 
+await step('写真の撮影時刻を読んで、その時刻の位置に並べる', async () => {
+  await p.click('[data-tab="vLive"]');
+  await p.setInputFiles('#imgIn', { name: 'slide.jpg', mimeType: 'image/jpeg', buffer: await jpegWithExif(p, '2026:11:14 09:30:00') });
+  await p.waitForSelector('#feed .fi.photo');
+  const row = await p.locator('#feed .fi.photo').first().textContent();
+  if (!row.includes('09:30:00') || !row.includes('撮影時刻で配置')) throw new Error('撮影時刻で並んでいない：' + row.trim().slice(0, 60));
+});
+
+// スマホとの連携（手元に仲介サーバーを立てて、PCとスマホの2つの画面で確かめる）
+let peerServer = null;
+try {
+  const req = createRequire(import.meta.url);
+  const { ExpressPeerServer } = req('peer');
+  const express = req('express');
+  const http = await import('node:http');
+  const app = express();
+  peerServer = http.createServer(app);
+  app.use('/', ExpressPeerServer(peerServer, { path: '/' }));   // 'mount' のときに仲介の道筋ができる
+  await new Promise((r) => peerServer.listen(0, '127.0.0.1', r));
+} catch (e) { peerServer = null; console.log('-- スマホ連携の確認は省略（npm install で peer を入れると確かめられます）', e.message); }
+if (peerServer) {
+  const pp = peerServer.address().port;
+  await step('スマホから写真とメモが届く', async () => {
+    await p.goto(base + `?test=1&peer=127.0.0.1:${pp}`);
+    await p.waitForSelector('#metaBox:not([hidden])');
+    await p.click('#linkBtn');
+    await p.waitForFunction(() => document.querySelector('#linkState').textContent.includes('待って'), null, { timeout: 8000 });
+    const url = await p.textContent('#qrUrl');
+    if (!(await p.locator('#qr svg').count())) throw new Error('QRコードが出ない');
+    const ph = await ctx.newPage();
+    ph.on('pageerror', (e) => errors.push('スマホ画面のエラー：' + e.message));
+    await ph.setViewportSize({ width: 390, height: 800 });
+    await ph.goto(url);
+    await ph.waitForFunction(() => document.querySelector('#pill').textContent.includes('つながって'), null, { timeout: 10000 });
+    await p.waitForFunction(() => document.querySelector('#tLink').textContent.includes('1台'), null, { timeout: 5000 });
+    await ph.fill('#memo', 'スライド12の図');
+    await ph.setInputFiles('#cam', { name: 'cam.jpg', mimeType: 'image/jpeg', buffer: await jpegWithExif(ph, null) });
+    await ph.waitForSelector('.st.ok', { timeout: 10000 });
+    await ph.click('[data-t="q"]'); await ph.fill('#memo', 'スマホからの質問'); await ph.click('#sendMemo');
+    await ph.waitForFunction(() => document.querySelectorAll('.st.ok').length === 2, null, { timeout: 10000 });
+    await p.waitForSelector('#feed .fi.photo .t:has-text("スライド12の図")', { timeout: 5000 });
+    await p.waitForSelector('#feed .fi.q .t:has-text("スマホからの質問")', { timeout: 5000 });
+    await ph.screenshot({ path: 'tools/.last-phone.png' }).catch(() => {});
+    await ph.close();
+  });
+  peerServer.closeAllConnections?.(); peerServer.close();
+}
+
 await browser.close();
 server.close();
 if (errors.length) { console.log('\n' + errors.join('\n')); process.exit(1); }
 console.log('\nすべて OK');
+process.exit(0);
