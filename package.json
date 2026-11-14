@@ -7,5 +7,6 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "check": "node tools/check.mjs"
-  }
+  },
+  "license": "Apache-2.0"
 }

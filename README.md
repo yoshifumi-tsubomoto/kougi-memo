@@ -13,7 +13,7 @@
 
 ## 開く
 
-（GitHub Pages で公開したら、ここに URL を書く）
+https://yoshifumi-tsubomoto.github.io/kougi-memo/
 
 - Chrome か Edge で開いてください。リアルタイム文字起こしは、この2つでしか動きません
 - 一度開けば、ネットがなくても開けます（ブラウザにアプリをしまいます）
@@ -56,6 +56,10 @@ GitHub（アプリのプログラムを配るだけ）
 - 書き出していない講義には、一覧で「●（未書き出し）」の印が付きます。書き出した後に変更すると、また印が付きます
 - セッションを終了すると、書き出しの案内が出ます
 
+## 手引き
+
+使い始めかた・講義1回分の流れ・データの守り方は、[手引き](guide/README.md) にまとめています。
+
 ## 長い時間つかうときは
 
 - PCは電源につなぎ、スリープしない設定にしてください（記録中は画面が消えないようにしています）
@@ -72,6 +76,15 @@ GitHub（アプリのプログラムを配るだけ）
 | ② | このPCの中で清書する（音声を外部に送らない） | 🔜 次に作ります |
 | ③ | OpenAI で清書する（自分のAPIキー） | 🔜 予定 |
 | ④ | Gemini で清書する（自分のAPIキー） | 🔜 予定 |
+
+## 要望・不具合の連絡
+
+- **どなたでも**：[要望・不具合の連絡フォーム](https://docs.google.com/forms/d/e/1FAIpQLSd9N9QK0rY9jTGNF2HcpDyVbXDLzyhA-qtZ2tM7VUrqhZBQEg/viewform?usp=pp_url&entry.1742015823=%E3%82%A2%E3%83%97%E3%83%AA%E3%81%AE%E8%A6%81%E6%9C%9B%E3%83%BB%E4%B8%8D%E5%85%B7%E5%90%88&entry.781158365=%E8%AC%9B%E7%BE%A9%E3%83%A1%E3%83%A2)（Google フォーム。アカウントはいりません。作者だけが読みます）
+- **GitHub をお使いの方**：[Issues](https://github.com/yoshifumi-tsubomoto/kougi-memo/issues)
+
+## ライセンス
+
+[Apache License 2.0](LICENSE)。改変したものを配るときは、[NOTICE](NOTICE) を残してください。
 
 ## 開発
 
@@ -105,6 +118,6 @@ npm run check
 
 ### 新しい版を出すとき
 
-1. `docs/js/app.js` の `APP_VERSION` と、`docs/sw.js` の `VERSION` を同じ番号に上げる（**`sw.js` を変えないと、使っている人に新しい版が届きません**）
+1. `docs/js/app.js` の `APP_VERSION`、`docs/sw.js` の `VERSION`、`NOTICE` の版を同じ番号に上げる（**`sw.js` を変えないと、使っている人に新しい版が届きません**）
 2. `npm run check` が通ることを確かめる
 3. `main` に入れると、GitHub Pages に反映されます。使っている人の画面には「新しい版があります」と出て、本人が押したときに切り替わります
