@@ -1,0 +1,288 @@
+/* 講義メモ
+ * Tsubomoto Lab. のサイトにそろえた見た目：方眼の紙、等幅の英字ラベル、丸いボタン、淡いチップ。
+ * その上に、すりガラスのパネルを重ねる。
+ * デザインは3つ（html の data-look で切り替え）
+ *   aurora（初期）… ミントとラベンダー。主ボタンは紺
+ *   peach         … 桃とあんず。主ボタンはローズ
+ *   citrus        … レモンとライム。主ボタンは青緑、タイマーは黄色 */
+:root{
+  color-scheme: light;
+  --paper:#FBFCFD; --surface:#FFFFFF;
+  --glass:rgba(255,255,255,.62); --glass-strong:rgba(255,255,255,.82); --glass-edge:rgba(255,255,255,.95);
+  --ink:#14243B; --muted:#4B5B72; --muted-2:#6E7C90; --line:#D9E2EC; --grid:rgba(27,58,107,.055);
+  --navy:#1B3A6B;
+  --primary:#1B3A6B; --on-primary:#FFFFFF;
+  --teal:#0E8C7E; --teal-soft:#E2F4F1; --on-teal:#FFFFFF;           /* 選んでいるタブや強調の色 */
+  --add:#0E8C7E;                                                      /* 「追加」ボタン */
+  --blob1:rgba(160,232,210,.70); --blob2:rgba(214,200,250,.75); --blob3:rgba(196,226,255,.70);
+  --mark-bg:#1B3A6B; --mark-ink:#FFFFFF; --mark-edge:#1B3A6B;
+  --timer-bg:transparent; --timer-ink:#1B3A6B;
+  --marker:#FCF0DC; --marker-ink:#8A520A; --marker-hi:#FBE3A0;
+  --q:#1E4FA0; --q-soft:#E5EEFB; --todo:#0B6E63; --todo-soft:#E2F4F1; --quote:#5640B0; --quote-soft:#EEEAFB;
+  --rec:#C2334D; --rec-soft:#FBE7ED; --ok:#0B7A5C; --warn:#A8540A;
+  --radius:22px;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --f-read:"BIZ UDPGothic","BIZ UDPゴシック","Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;   /* 文章（文字起こし・メモ・入力欄）用のUDフォント */
+  --gutter-l:max(16px,env(safe-area-inset-left,0px)); --gutter-r:max(16px,env(safe-area-inset-right,0px));
+}
+:root[data-look="peach"]{
+  --paper:#FDFBFA; --line:#EBDCDC;
+  --primary:#B53A5D; --teal:#B53A5D; --teal-soft:#FBE7ED; --add:#B53A5D;
+  --blob1:rgba(255,210,186,.80); --blob2:rgba(255,204,220,.80); --blob3:rgba(255,228,196,.80);
+  --mark-bg:#B53A5D; --mark-edge:#B53A5D;
+  --timer-ink:#B53A5D;
+  --todo:#8E2A47; --todo-soft:#FBE7ED;
+  --radius:26px;
+}
+:root[data-look="citrus"]{
+  --paper:#FBFCF8;
+  --primary:#0E8C7E; --teal:#0E8C7E; --teal-soft:#E2F4F1; --add:#0E8C7E;
+  --blob1:rgba(255,238,140,.75); --blob2:rgba(210,242,170,.75); --blob3:rgba(255,216,170,.70);
+  --mark-bg:#FFE45C; --mark-ink:#14243B; --mark-edge:#14243B;
+  --timer-bg:#FFE45C; --timer-ink:#14243B;
+  --marker:#FFE45C; --marker-ink:#3D3000;
+}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{color:var(--ink);font-family:var(--f-body);font-size:14.5px;line-height:1.7;display:flex;flex-direction:column;
+  background:
+    radial-gradient(ellipse at 0% 0%, var(--blob1) 0, transparent 45%),
+    radial-gradient(ellipse at 100% 12%, var(--blob2) 0, transparent 45%),
+    radial-gradient(ellipse at 60% 100%, var(--blob3) 0, transparent 50%),
+    linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 24px 24px,
+    var(--paper);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+button,input,textarea,select{font:inherit;color:inherit}
+button,label.btn{cursor:pointer}
+:focus-visible{outline:3px solid color-mix(in srgb,var(--teal) 55%,transparent);outline-offset:2px;border-radius:6px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.small{font-size:12px} .muted{color:var(--muted)} .sp{flex:1}
+.note{font-size:12.5px;color:var(--muted);margin:0}
+.en{font-family:var(--f-mono);font-size:11px;font-weight:500;letter-spacing:.12em;color:var(--muted-2);margin-right:8px}
+.glass{background:var(--glass);border:1px solid var(--glass-edge);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
+
+.btn{border:1.5px solid var(--navy);background:var(--surface);color:var(--navy);border-radius:999px;padding:5px 14px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none;transition:transform .15s,background .15s}
+.btn:hover:not([disabled]){background:#F2F6FA;transform:translateY(-1px)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.btn.primary:hover:not([disabled]){background:color-mix(in srgb,var(--primary) 88%,#000)}
+.btn.rec{background:var(--rec);border-color:var(--rec);color:#fff;font-weight:700}
+.btn.rec:hover:not([disabled]){background:color-mix(in srgb,var(--rec) 88%,#000)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.ghost:hover:not([disabled]){background:var(--teal-soft);color:var(--teal);transform:none}
+.btn.danger{color:var(--rec)}
+.btn.icon{padding-inline:10px}
+.btn[disabled]{opacity:.45;cursor:default;transform:none}
+@media (prefers-reduced-motion:reduce){.btn{transition:none}.btn:hover{transform:none}}
+
+.update{background:var(--navy);color:#fff;padding:8px var(--gutter-r) 8px var(--gutter-l);display:flex;gap:12px;align-items:center;justify-content:center;font-size:13px}
+.update .btn{background:#fff;color:var(--navy);border-color:#fff}
+.preview-bar{background:#A8540A}
+
+/* 上の帯 */
+header{background:color-mix(in srgb,var(--paper) 72%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:10px var(--gutter-r) 0 var(--gutter-l);display:grid;gap:8px}
+.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;margin-right:6px;text-decoration:none;color:inherit}
+.mark{width:34px;height:34px;border-radius:9px;background:var(--mark-bg);color:var(--mark-ink);border:1.5px solid var(--mark-edge);display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:14px;flex:none}
+:root[data-look="peach"] .mark{border-radius:50%}
+.brand-text{display:flex;flex-direction:column;line-height:1.2}
+.brand-text strong{font-family:var(--f-mono);font-weight:500;font-size:15px;color:var(--navy)}
+.brand-text small{font-size:11px;color:var(--muted-2)}
+select{border:1px solid var(--line);background:var(--glass-strong);border-radius:999px;padding:6px 12px;max-width:min(340px,100%)}
+.meta{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1.3fr) minmax(0,.9fr) minmax(0,1.3fr);gap:10px}
+.meta input{width:100%;min-width:0;border:0;border-bottom:1.5px solid #C5D2E0;background:transparent;padding:3px 0;color:var(--ink);font-size:15px}
+.meta input::placeholder{color:#6E7C90;opacity:1}
+.meta #fTitle{font-weight:700;font-size:20px}
+.meta input:focus{outline:none;border-bottom-color:var(--teal)}
+.tabs{display:flex;gap:4px;padding-bottom:8px}
+.tab{border:0;background:transparent;padding:4px 14px;border-radius:999px;color:var(--muted)}
+.tab.on{background:var(--teal-soft);color:var(--teal);font-weight:700}
+
+/* セッションの操作 */
+.ctrl{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:14px var(--gutter-r) 0 var(--gutter-l);padding:10px 18px;border-radius:var(--radius);background:var(--glass);border:1px solid var(--glass-edge);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);box-shadow:0 10px 34px rgba(27,58,107,.07)}
+.sess{display:flex;align-items:center;gap:10px;padding:2px 14px;border-radius:999px;background:var(--timer-bg)}
+.sname{font-family:var(--f-mono);font-size:12px;letter-spacing:.06em;color:var(--muted)}
+:root[data-look="citrus"] .sname{color:var(--timer-ink)}
+.el{font-family:var(--f-mono);font-size:30px;font-weight:500;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--timer-ink)}
+.tot{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.ind{display:flex;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.ind > span{display:inline-flex;align-items:center;gap:5px;padding:1px 10px;border-radius:999px;background:var(--glass-strong);border:1px solid var(--line)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted-2);display:inline-block}
+.dot.on{background:var(--ok)} .dot.rec{background:var(--rec);animation:pulse 1.4s infinite} .dot.warn{background:var(--warn)}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.dot.rec{animation:none}}
+
+/* 広く表示：講義の情報・ロゴの文字・状態の文字を隠す */
+body.focus #metaBox,body.focus .brand-text{display:none!important}
+body.focus .ctrl{margin-top:8px;padding:6px 14px}
+body.focus .ind > span > span{display:none}
+body.focus .ind > span{padding:1px 9px}
+body.focus .ind > span::after{content:attr(data-short);font-size:11.5px}
+body.focus #vLive.on{padding-top:10px}
+/* 広く表示のときは、タブとセッション操作を上の帯に入れて1行にまとめる */
+.slot{display:contents}
+body.focus header{padding-bottom:10px}
+body.focus #tabs{padding-bottom:0}
+body.focus #ctrl{margin:0;padding:0 0 0 6px;background:none;border:0;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none;gap:8px;border-left:1px solid var(--line)}
+body.focus #ctrl .sess{padding:0 10px}
+body.focus #ctrl .el{font-size:22px}
+body.focus #ctrl .tot{display:none}
+body.focus #ctrl .ind{gap:4px}
+body.focus header .bar > .btn .lbl{display:none}
+body.focus header .bar > .btn{padding-inline:10px}
+body.focus #lecSel{max-width:240px}
+body.focus .bar{gap:6px}
+#focusBtn[aria-pressed="true"]{background:var(--teal-soft);color:var(--teal)}
+.btn.mini{padding:2px 10px;font-size:12px}
+.tx-open{display:none}
+#vLive.on.tx-off{grid-template-columns:44px minmax(0,1fr)}
+#vLive.tx-off #txPane > :not(.tx-open){display:none}
+#vLive.tx-off .tx-open{display:flex;flex:1;align-items:center;justify-content:center;writing-mode:vertical-rl;border:0;background:transparent;color:var(--teal);font-weight:700;letter-spacing:.1em;cursor:pointer;padding:12px 0}
+.steps{display:grid;gap:8px}
+.steps .step{border:1px solid var(--line);border-radius:14px;padding:10px 12px;font-size:13px}
+.steps .step b{display:block;margin-bottom:2px}
+.steps .step.here{border-color:var(--teal);background:var(--teal-soft)}
+
+/* 記録の画面 */
+.view{flex:1;min-height:0;display:none}
+#vLive.on{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;padding:14px var(--gutter-r) 16px var(--gutter-l)}
+#vSum.on{display:block;overflow:auto}
+.pane{display:flex;flex-direction:column;min-height:0;border-radius:var(--radius);background:var(--glass);border:1px solid var(--glass-edge);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);overflow:hidden}
+.pane h2{font-size:13px;font-weight:500;color:var(--muted);margin:0;padding:14px 20px 6px;display:flex;align-items:center;gap:4px}
+.pane h2 label{letter-spacing:0;font-size:12px}
+.scroll{flex:1;overflow:auto;padding:0 20px 16px;min-height:0}
+.tline{display:grid;grid-template-columns:70px minmax(0,1fr);gap:10px;padding:4px 0}
+.tline .tm{font-family:var(--f-mono);font-size:12px;color:var(--muted-2);padding-top:2px}
+.tline .tx{overflow-wrap:anywhere;font-size:15px;font-family:var(--f-read)}
+.tline.interim .tx{color:var(--muted);font-style:italic}
+.shead{margin:14px 0 4px;font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;color:var(--teal);border-top:1px solid var(--line);padding-top:8px}
+.empty{color:var(--muted);font-size:13px;padding:18px 0;list-style:none}
+
+.feed{list-style:none;margin:0;padding:0;display:block}
+.feed::after{content:"";display:block;clear:both}
+.feed.nowrap .fi img{float:none;display:block;margin:4px 0 6px}
+.mini-sel{width:auto;padding:1px 6px;font-size:12px;border-radius:999px}
+/* メモは普通の文章の流れで並べる。写真は左に寄せ、後に続くメモの文字が写真の横に回り込む */
+.fi{display:block;position:relative;padding:5px 26px 5px 0;overflow-wrap:anywhere}
+.fi .tm{display:inline-block;min-width:70px;font-family:var(--f-mono);font-size:12px;color:var(--muted-2)}
+.fi .tx{overflow-wrap:anywhere}
+.fi .t{white-space:pre-wrap;font-size:15px;font-family:var(--f-read)}
+.fi .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:0 8px;margin-right:6px;border:1px solid transparent}
+.fi.key .t{background:linear-gradient(transparent 58%,var(--marker-hi) 58%);font-weight:700}
+.fi.key .tag{background:var(--marker);color:var(--marker-ink);border-color:color-mix(in srgb,var(--marker-ink) 30%,transparent)}
+.fi.q .tag{background:var(--q-soft);color:var(--q);border-color:color-mix(in srgb,var(--q) 30%,transparent)}
+.fi.todo .tag{background:var(--todo-soft);color:var(--todo);border-color:color-mix(in srgb,var(--todo) 30%,transparent)}
+.fi.quote .tag{background:var(--quote-soft);color:var(--quote);border-color:color-mix(in srgb,var(--quote) 30%,transparent)}
+.fi.quote .t{font-style:italic;color:var(--quote)}
+.fi.photo .tag{background:var(--teal-soft);color:var(--teal);border-color:color-mix(in srgb,var(--teal) 30%,transparent)}
+.fi img{float:left;position:relative;z-index:1;width:var(--photo-w,200px);max-width:100%;height:auto;margin:4px 14px 8px 0;border-radius:12px;cursor:zoom-in;border:1px solid var(--glass-edge);box-shadow:0 4px 14px rgba(27,58,107,.1)}
+.fi .x{position:absolute;top:4px;right:0;border:0;background:transparent;color:var(--muted);font-size:13px;opacity:.5}
+.fi:hover .x,.fi .x:focus-visible{opacity:1}
+.composer{border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);padding:10px 16px 14px;display:grid;gap:8px}
+.types{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--glass-strong);border-radius:999px;padding:2px 12px;font-size:12px}
+.chip.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.row{display:flex;gap:8px;align-items:stretch}
+.row .btn{align-self:flex-end}
+#memoIn{font-family:var(--f-read);flex:1;min-width:0;border:1.5px solid #C5D2E0;border-radius:14px;padding:10px 14px;background:#FFFFFF;color:var(--ink);font-size:16px;line-height:1.6;resize:vertical;min-height:44px;max-height:60vh;box-shadow:inset 0 1px 2px rgba(20,36,59,.06)}
+#memoIn::placeholder{color:#6E7C90;opacity:1}
+#memoIn:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px color-mix(in srgb,var(--teal) 18%,transparent)}
+
+#memoBtn{background:var(--add);border-color:var(--add);color:#fff;font-weight:700;padding:9px 20px}
+
+/* まとめ・出力 */
+.sumwrap{max-width:900px;margin:0 auto;padding:18px var(--gutter-r) 48px var(--gutter-l);display:grid;gap:16px}
+.card{border-radius:var(--radius);background:var(--glass);border:1px solid var(--glass-edge);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);padding:16px 20px;display:grid;gap:10px;min-width:0}
+.card h3{margin:0;font-size:16px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.card h3 small{font-family:var(--f-mono);font-weight:400;color:var(--muted);font-size:12px}
+.card h3 input{font:inherit;font-weight:700;border:0;border-bottom:1px solid var(--line);background:transparent;width:12em;max-width:100%}
+.stats{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.stats b{color:var(--ink);font-family:var(--f-mono);font-weight:500}
+.sumrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sumrow input[type=number]{width:90px;border:1px solid var(--line);border-radius:10px;padding:4px 8px;background:var(--glass-strong)}
+.card textarea{font-family:var(--f-read);width:100%;border:1.5px solid #C5D2E0;border-radius:14px;padding:10px 12px;background:#FFFFFF;color:var(--ink);font-size:15px;line-height:1.7;min-height:110px;resize:vertical}
+details.audio summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.alist{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
+.alist li{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px}
+.alist audio{height:32px;max-width:100%}
+
+/* 小窓 */
+.modal{position:fixed;inset:0;background:rgba(20,36,59,.35);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:30;padding:16px}
+.modal .box{background:var(--surface);border-radius:20px;padding:22px;max-width:540px;width:100%;display:grid;gap:10px;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(20,36,59,.25)}
+.modal .box h3{margin:0}
+.modal .box h4{margin:8px 0 0;font-size:11px;font-family:var(--f-mono);font-weight:500;letter-spacing:.12em;color:var(--muted-2)}
+.modal .box p{margin:0}
+.modal .box.img{width:auto;max-width:96vw;background:transparent;padding:0;box-shadow:none;position:relative;overflow:visible;cursor:zoom-out}
+.modal .box.img img{display:block;max-width:96vw;max-height:88vh;border-radius:12px;box-shadow:0 20px 60px rgba(20,36,59,.35)}
+.modal .close-x{position:absolute;top:-14px;right:-14px;width:40px;height:40px;border-radius:50%;border:0;background:#fff;color:var(--navy);font-size:20px;line-height:1;box-shadow:0 4px 14px rgba(20,36,59,.25);cursor:pointer}
+.engines{display:grid;gap:6px}
+.engines label{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:12px;padding:8px 10px;font-size:13px}
+.engines label.off{opacity:.55}
+.engines small{display:block;color:var(--muted)}
+.looks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.look{position:relative;display:grid;gap:6px;border:1.5px solid var(--line);border-radius:14px;padding:8px;cursor:pointer;font-size:12.5px}
+.look input{position:absolute;opacity:0;pointer-events:none}
+.look:has(input:checked){border-color:var(--navy);box-shadow:0 0 0 2px color-mix(in srgb,var(--navy) 25%,transparent)}
+.look:has(input:focus-visible){outline:3px solid color-mix(in srgb,var(--teal) 55%,transparent);outline-offset:2px}
+.look .sw{height:46px;border-radius:10px;border:1px solid var(--line)}
+.look .sw.aurora{background:radial-gradient(ellipse at 0% 0%,#A0E8D2 0,transparent 60%),radial-gradient(ellipse at 100% 20%,#D6C8FA 0,transparent 60%),#F4F8FB}
+.look .sw.peach{background:radial-gradient(circle at 10% 20%,#FFD2BA 0,transparent 60%),radial-gradient(circle at 90% 10%,#FFCCDC 0,transparent 60%),#FDF8F6}
+.look .sw.citrus{background:radial-gradient(circle at 10% 20%,#FFEE8C 0,transparent 60%),radial-gradient(circle at 90% 10%,#D2F2AA 0,transparent 60%),#FAFBF4}
+.look b{font-weight:700}
+.look small{display:block;color:var(--muted);font-size:11px}
+.meter{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:4px}
+.meter>i{display:block;height:100%;background:var(--teal)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));background:var(--navy);color:#fff;padding:8px 16px;border-radius:999px;font-size:13px;z-index:40;max-width:calc(100vw - 32px)}
+.drop{position:fixed;inset:12px;border:3px dashed var(--teal);border-radius:22px;background:color-mix(in srgb,var(--paper) 80%,transparent);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--teal);z-index:35;pointer-events:none}
+.nudge{display:flex;gap:10px 16px;align-items:center;flex-wrap:wrap;margin:12px var(--gutter-r) 0 var(--gutter-l);padding:10px 16px;border-radius:16px;background:#FCF0DC;color:#6B3F06;border:1px solid rgba(184,110,12,.3);font-size:13px}
+.nudge > span:first-child{flex:1 1 320px;min-width:0}
+.nudge-btns{display:flex;gap:6px;flex-wrap:wrap}
+.nudge .btn.ghost{color:inherit}
+.state{margin:0;font-size:13px;font-weight:700}
+.state.ok{color:var(--ok)} .state.warn{color:var(--warn)}
+.welcome{max-width:640px;margin:8vh auto;padding:28px;border-radius:var(--radius);background:var(--glass);border:1px solid var(--glass-edge);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);display:grid;gap:12px;width:calc(100% - 32px)}
+.welcome .eyebrow{font-family:var(--f-mono);font-size:13px;color:var(--teal);margin:0}
+.welcome h1{margin:0;font-size:28px;font-weight:700}
+.welcome .lead{margin:0;font-size:15px;color:var(--muted)}
+.welcome ol{margin:0;padding-left:1.3em;color:var(--muted)}
+
+/* スマホと連携 */
+.qrbox{display:grid;justify-items:center;gap:8px;text-align:center}
+.qrbox .qr{background:#fff;padding:8px;border-radius:12px;width:min(260px,70vw)}
+.qrbox .qr svg{display:block;width:100%;height:auto}
+.url{font-size:11px;word-break:break-all;color:var(--muted);font-family:var(--f-mono)}
+.linkstate{font-weight:700}
+.fi .from{font-size:10.5px;color:var(--muted)}
+
+/* スマホの画面（phone.html） */
+body.phone{display:block;overflow:auto;min-height:100%}
+.ph{max-width:520px;margin:0 auto;padding:16px var(--gutter-r) 32px var(--gutter-l);display:grid;gap:12px}
+.ph-head{background:transparent;border:0;padding:0;display:block;-webkit-backdrop-filter:none;backdrop-filter:none}
+.ph-head h1{font-size:20px;margin:2px 0 6px;line-height:1.4}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;border:1px solid var(--line);background:var(--glass-strong);border-radius:999px;padding:3px 12px}
+.ph-help{background:var(--glass-strong);border:1px solid var(--warn);border-radius:14px;padding:10px 12px;font-size:13px}
+.ph-big{display:flex;align-items:center;justify-content:center;gap:10px;border-radius:var(--radius);padding:24px;font-size:19px;font-weight:700;background:var(--primary);color:var(--on-primary);cursor:pointer;box-shadow:0 10px 30px rgba(27,58,107,.15)}
+.ph-sub{justify-content:center;padding:12px;font-size:14px}
+.phone textarea{font-family:var(--f-read);width:100%;border:1px solid var(--line);border-radius:16px;padding:10px 14px;background:var(--glass-strong);resize:vertical;font-size:16px}
+.ph-send{justify-content:center;padding:12px;font-weight:700;font-size:14px}
+.ph-h2{font-family:var(--f-mono);font-size:11px;font-weight:500;letter-spacing:.12em;color:var(--muted-2);margin:10px 0 0}
+.ph-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.ph-list li:not(.empty){display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--glass);border:1px solid var(--glass-edge);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-radius:16px;padding:8px}
+.ph-list img,.ph-thumb{width:52px;height:52px;object-fit:cover;border-radius:10px}
+.ph-thumb{background:var(--glass-strong);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)}
+.ph-item{font-family:var(--f-read);min-width:0;overflow-wrap:anywhere;font-size:13px}
+.st{font-size:12px;font-weight:700;white-space:nowrap}
+.st.ok{color:var(--ok)} .st.wait{color:var(--warn)} .st.ng{color:var(--rec)}
+
+@media (max-width:820px){
+  .meta{grid-template-columns:1fr 1fr}
+  .meta #fTitle{grid-column:1 / -1}
+  #vLive.on{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1.1fr);gap:12px}
+  #vLive.on.tx-off{grid-template-columns:minmax(0,1fr);grid-template-rows:40px minmax(0,1fr)}
+  #vLive.tx-off .tx-open{writing-mode:horizontal-tb}
+  .brand-text small{display:none}
+  .looks{grid-template-columns:1fr}
+}
