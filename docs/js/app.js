@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.4.2';
+export const APP_VERSION = '0.4.3';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
