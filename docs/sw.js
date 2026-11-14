@@ -1,6 +1,6 @@
 // 講義メモ：アプリ一式をブラウザにしまっておき、ネットがなくても開けるようにする。
 // 新しい版が届いても、利用者が「更新する」を押すまでは切り替えない。
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const CACHE = 'kougi-memo-' + VERSION;
 const FONT_CACHE = 'kougi-memo-fonts';
 const FILES = ['./', 'index.html', 'style.css', 'js/app.js', 'js/store.js', 'js/media.js', 'js/link.js', 'js/phone.js', 'phone.html', 'vendor/peerjs.min.js', 'vendor/qrcode.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];

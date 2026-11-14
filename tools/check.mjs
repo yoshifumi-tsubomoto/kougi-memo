@@ -78,6 +78,17 @@ await step('バックアップを書き出すと「書き出し済み」にな�
   if ((await p.locator('#feed .fi').count()) !== 1) throw new Error('読み込み後のメモの数が違う');
 });
 
+await step('デザインを切り替えて、開き直しても保たれる', async () => {
+  await p.click('#settingsBtn');
+  await p.click('.look:has(input[value="peach"])');
+  if ((await p.evaluate(() => document.documentElement.dataset.look)) !== 'peach') throw new Error('切り替わらない');
+  await p.reload();
+  await p.waitForSelector('#metaBox:not([hidden])');
+  if ((await p.evaluate(() => document.documentElement.dataset.look)) !== 'peach') throw new Error('開き直すと元に戻る');
+  await p.click('#settingsBtn');
+  await p.click('.look:has(input[value="aurora"])');
+  await p.click('#settings [data-close]');
+});
 await step('写真の撮影時刻を読んで、その時刻の位置に並べる', async () => {
   await p.click('[data-tab="vLive"]');
   await p.setInputFiles('#imgIn', { name: 'slide.jpg', mimeType: 'image/jpeg', buffer: await jpegWithExif(p, '2026:11:14 09:30:00') });

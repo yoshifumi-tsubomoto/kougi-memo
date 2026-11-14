@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.2.0';
+export const APP_VERSION = '0.3.0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -12,6 +12,18 @@ const PART_MS = TEST ? 1000 : 60 * 1000;         // この間隔で録音をブ�
 const TYPES = [
   { k: 'memo', label: 'メモ' }, { k: 'key', label: '要点' }, { k: 'q', label: '質問' },
   { k: 'todo', label: 'TODO' }, { k: 'quote', label: '引用' }];
+const LOOKS = [
+  { k: 'aurora', label: 'オーロラ', note: 'ミント×ラベンダー' },
+  { k: 'peach', label: 'ピーチ', note: '桃×あんず' },
+  { k: 'citrus', label: 'シトラス', note: 'レモン×ライム' },
+];
+const currentLook = () => document.documentElement.dataset.look || 'aurora';
+function setLook(k) {
+  if (!LOOKS.some((l) => l.k === k)) k = 'aurora';
+  document.documentElement.dataset.look = k;
+  try { localStorage.setItem('kougi-look', k); } catch { /* 保存できなくても見た目は変わる */ }
+  sendInfo();   // つながっているスマホも同じデザインにする
+}
 const TAGS = { key: '要点', q: '質問', todo: 'TODO', quote: '引用', photo: '写真' };
 const ENGINES = [
   { k: 'none', label: '① 清書しない（リアルタイムの速報だけ）', note: '設定はいりません', ready: true },
@@ -222,7 +234,7 @@ async function endSession() {
 
 /* ============================== スマホと連携 ============================== */
 const L = { host: null, state: 'off', phones: 0 };
-const linkInfo = () => { const s = openSession(); return { title: S.lec ? S.lec.title || '無題の講義' : '', session: s ? s.name : '' }; };
+const linkInfo = () => { const s = openSession(); return { title: S.lec ? S.lec.title || '無題の講義' : '', session: s ? s.name : '', look: currentLook() }; };
 function sendInfo() { if (L.host) L.host.broadcast({ t: 'info', ...linkInfo() }); }
 async function receivePhoto(m) {
   if (!S.lec || !(m.data instanceof ArrayBuffer || ArrayBuffer.isView(m.data))) throw new Error('受け取れませんでした');
@@ -562,6 +574,7 @@ async function openSettings() {
     <div style="margin-top:6px">${info.persisted ? '✅ ブラウザに記録を消されにくい設定になっています' : '⚠ ブラウザが容量不足のときに記録を消すことがあります。「アプリとして入れる」と消されにくくなります'}</div>
     <div style="margin-top:6px">${left.length ? `⚠ まだ書き出していない講義が <b>${left.length}</b> 件あります（講義の一覧で「●」の付いたもの）` : '✓ すべての講義を書き出し済みです'}</div>
     <div class="sumrow" style="margin-top:8px"><label class="btn">バックアップを読み込む<input type="file" id="importIn" accept=".json,application/json" hidden></label></div>`;
+  $('#looks').innerHTML = LOOKS.map((l) => `<label class="look"><input type="radio" name="look" value="${l.k}" ${currentLook() === l.k ? 'checked' : ''}><span class="sw ${l.k}"></span><span><b>${l.label}</b><small>${l.note}</small></span></label>`).join('');
   const cur = ls('engine') || 'none';
   $('#engines').innerHTML = ENGINES.map((e) => `<label class="${e.ready ? '' : 'off'}"><input type="radio" name="engine" value="${e.k}" ${cur === e.k ? 'checked' : ''} ${e.ready ? '' : 'disabled'}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
   $('#version').textContent = `版：${APP_VERSION}`;
@@ -602,6 +615,7 @@ document.addEventListener('drop', (e) => { e.preventDefault(); dragN = 0; $('#dr
 document.addEventListener('change', async (e) => {
   if (e.target.id === 'importIn' && e.target.files[0]) { $('#settings').hidden = true; importFile(e.target.files[0]); e.target.value = ''; return; }
   if (e.target.name === 'engine') { ls('engine', e.target.value); return; }
+  if (e.target.name === 'look') { setLook(e.target.value); return; }
   const sn = e.target.closest('[data-sname]');
   if (sn && sn.tagName === 'INPUT') {
     const s = sessions().find((x) => x.id === sn.dataset.sname); if (!s) return;

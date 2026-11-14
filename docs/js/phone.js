@@ -90,7 +90,9 @@ function dial() {
   });
   conn.on('data', (m) => {
     if (!m || typeof m !== 'object') return;
-    if (m.t === 'info') { $('#title').textContent = m.title || '無題の講義'; if (m.session) pill('on', `つながっています・${m.session}`); }
+    if (m.t === 'info') {
+      if (['aurora', 'peach', 'citrus'].includes(m.look)) { document.documentElement.dataset.look = m.look; try { localStorage.setItem('kougi-look', m.look); } catch { /* なくてもよい */ } }
+      $('#title').textContent = m.title || '無題の講義'; if (m.session) pill('on', `つながっています・${m.session}`); }
     if (m.t === 'ack' || m.t === 'nack') {
       const it = items.find((x) => x.id === m.id);
       if (it) { it.state = m.t === 'ack' ? 'ok' : 'ng'; it.inflight = false; if (it.state === 'ok') it.msg = null; renderSent(); }

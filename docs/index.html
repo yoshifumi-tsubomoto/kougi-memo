@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>講義メモ</title>
 <meta name="description" content="講義・研修・講演会を、まるごと記録してセッションごとにまとめる">
-<meta name="theme-color" content="#0F5257">
+<meta name="theme-color" content="#FBFCFD">
+<script>/* 選んだデザインを、画面が出る前に当てる */try{var l=localStorage.getItem('kougi-look');if(l)document.documentElement.dataset.look=l}catch(e){}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,7 +20,7 @@
 
 <header>
   <div class="bar">
-    <span class="brand">講義メモ</span>
+    <span class="brand"><span class="mark" aria-hidden="true">Km</span><span class="brand-text"><strong>講義メモ</strong><small>Tsubomoto Lab.</small></span></span>
     <select id="lecSel" aria-label="講義を選ぶ"></select>
     <button class="btn" id="newBtn" type="button">＋ 新しい講義</button>
     <span class="sp"></span>
@@ -60,7 +61,8 @@
 </div>
 
 <main class="welcome" id="welcome" hidden>
-  <h1>講義メモ</h1>
+  <p class="eyebrow">// Tsubomoto Lab. · 講義メモ</p>
+  <h1>講義を、まるごと記録する</h1>
   <p class="lead">講義・研修・講演会を、まるごと記録してセッションごとにまとめます。</p>
   <ol>
     <li>「新しい講義」を作り、タイトルと講師を入れる</li>
@@ -74,11 +76,11 @@
 
 <section class="view" id="vLive">
   <div class="pane">
-    <h2>文字起こし（リアルタイム）<span class="sp"></span><label class="small"><input type="checkbox" id="autoScroll" checked> 自動スクロール</label></h2>
+    <h2><span class="en">TRANSCRIPT</span>文字起こし<span class="sp"></span><label class="small"><input type="checkbox" id="autoScroll" checked> 自動スクロール</label></h2>
     <div class="scroll" id="tScroll"><div id="tList"></div><div class="tline interim" id="interim" hidden><span class="tm">…</span><span class="tx"></span></div></div>
   </div>
   <div class="pane" id="memoPane">
-    <h2>メモ・写真<span class="sp"></span><span class="small" id="feedCount"></span></h2>
+    <h2><span class="en">NOTES</span>メモ・写真<span class="sp"></span><span class="small" id="feedCount"></span></h2>
     <div class="scroll" id="fScroll"><ul class="feed" id="feed"></ul></div>
     <div class="composer">
       <div class="types" id="types"></div>
@@ -96,6 +98,9 @@
 <div class="modal" id="settings" hidden>
   <div class="box left">
     <h3>設定と保存状況</h3>
+    <h4>デザイン</h4>
+    <div class="looks" id="looks" role="radiogroup" aria-label="デザイン"></div>
+    <h4>保存の状況</h4>
     <div id="storeInfo" class="small"></div>
     <h4>清書（高精度の文字起こし）の方法</h4>
     <div class="engines" id="engines"></div>
