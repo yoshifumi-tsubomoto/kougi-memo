@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>講義メモ（スマホ）</title>
+<style>
+:root{
+  --paper:#F2F5F4; --surface:#FFFFFF; --ink:#14262A; --muted:#5A6C6F; --line:#D9E2E0;
+  --teal:#0F5257; --on-teal:#FFFFFF; --ok:#2E7D32; --warn:#B26A00; --rec:#C62828;
+  --marker:#FBE37A; --marker-ink:#4A3D00;
+  --f-body:"Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root{
+  --paper:#0E1618; --surface:#152023; --ink:#E4ECEC; --muted:#8FA3A5; --line:#25363A;
+  --teal:#5EC0BC; --on-teal:#06201F; --ok:#7BD389; --warn:#F2B451; --rec:#FF6B6B;
+  --marker:#5C4E10; --marker-ink:#FBE89A; color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.6;
+  padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+button,input,textarea{font:inherit;color:inherit}
+h1{font-size:18px;margin:0}
+.sub{font-size:13px;color:var(--muted)}
+.sess{display:inline-block;margin-top:6px;font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;background:var(--surface);border:1px solid var(--line)}
+.sess.live{color:var(--rec);border-color:var(--rec)}
+.big{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;border:0;border-radius:14px;padding:22px;font-size:19px;font-weight:700;background:var(--teal);color:var(--on-teal);margin-top:16px;cursor:pointer}
+.sec{display:flex;gap:8px;margin-top:10px}
+.sec label,.sec button{flex:1;text-align:center;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:12px;font-size:14px;cursor:pointer}
+.types{display:flex;gap:6px;flex-wrap:wrap;margin-top:18px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:13px}
+.chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+textarea{width:100%;margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface);min-height:84px;resize:vertical}
+.send{width:100%;margin-top:8px;border:1px solid var(--teal);background:var(--surface);color:var(--teal);font-weight:700;border-radius:10px;padding:12px}
+h2{font-size:13px;color:var(--muted);letter-spacing:.1em;margin:24px 0 6px}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+li{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px}
+li img{width:56px;height:56px;object-fit:cover;border-radius:6px}
+li .ph{width:56px;height:56px;border-radius:6px;background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted)}
+li .t{font-size:13px;overflow-wrap:anywhere}
+li .tm{font-size:11px;color:var(--muted)}
+.st{font-size:12px;font-weight:700;white-space:nowrap}
+.st.ok{color:var(--ok)} .st.wait{color:var(--warn)} .st.ng{color:var(--rec)}
+.retry{border:1px solid var(--line);background:transparent;border-radius:6px;font-size:12px;padding:2px 8px}
+.err{background:var(--surface);border:1px solid var(--rec);border-radius:10px;padding:14px;margin-top:20px}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">読み込み中…</h1>
+  <div class="sub" id="speaker"></div>
+  <span class="sess" id="sess" hidden></span>
+</header>
+
+<main id="main" hidden>
+  <label class="big">📷 写真を撮って送る<input type="file" id="cam" accept="image/*" capture="environment" hidden></label>
+  <div class="sec">
+    <label>🖼 アルバムから選ぶ<input type="file" id="lib" accept="image/*" multiple hidden></label>
+  </div>
+
+  <div class="types" id="types"></div>
+  <textarea id="memo" placeholder="気づいたこと（写真の説明にもなります）"></textarea>
+  <button class="send" id="sendMemo" type="button">メモだけ送る</button>
+
+  <h2>送信した記録</h2>
+  <ul id="sent"><li style="display:block;color:var(--muted);font-size:13px">送った写真とメモがここに並びます。PCの画面には数秒で届きます。</li></ul>
+</main>
+<div class="err" id="err" hidden></div>
+
+<script>
+const BOOT = <?!= boot ?>;
+</script>
+<script>
+(function(){
+'use strict';
+const hasGas = typeof google !== 'undefined' && google.script && google.script.run;
+function gas(fn){ return (...a) => new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...a)); }
+const api = hasGas ? {
+  getPhoneInfo: gas('API_getPhoneInfo'), addMemo: gas('API_addMemo'), uploadImage: gas('API_uploadImage'),
+} : { // GASの外で画面だけ確認するとき
+  getPhoneInfo: async () => ({title:'（画面確認用）講義タイトル', speaker:'講師名', session:{name:'セッション1'}}),
+  addMemo: async m => m, uploadImage: async () => ({}),
+};
+const TYPES = [{k:'memo',l:'メモ'},{k:'key',l:'要点'},{k:'q',l:'質問'},{k:'todo',l:'TODO'}];
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2,'0');
+const hms = ms => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+const id = BOOT.lectureId;
+let type = 'memo';
+const items = [];   // 送信の記録（失敗したものは再送できる）
+
+function renderTypes(){ $('#types').innerHTML = TYPES.map(t => `<button type="button" class="chip${type===t.k?' on':''}" data-t="${t.k}">${t.l}</button>`).join(''); }
+$('#types').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if(b){ type = b.dataset.t; renderTypes(); } });
+
+function renderSent(){
+  if(!items.length) return;
+  $('#sent').innerHTML = items.slice().reverse().map((it, i) => {
+    const st = it.state === 'ok' ? '<span class="st ok">✓ 送信済み</span>'
+      : it.state === 'ng' ? `<button class="retry" type="button" data-retry="${items.length-1-i}">再送</button>`
+      : '<span class="st wait">送信中…</span>';
+    return `<li>${it.thumb ? `<img src="${it.thumb}" alt="">` : '<span class="ph">メモ</span>'}
+      <div><div class="t">${(it.text || (it.thumb ? '写真' : '')).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</div><div class="tm">${hms(it.at)}</div></div>${st}</li>`;
+  }).join('');
+}
+$('#sent').addEventListener('click', e => { const b = e.target.closest('[data-retry]'); if(b) send(items[+b.dataset.retry]); });
+
+function resize(file, max=1600){
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width*k); c.height = Math.round(img.height*k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      res(c.toDataURL('image/jpeg', .82));
+    };
+    img.onerror = rej; img.src = url;
+  });
+}
+
+async function send(it){
+  it.state = 'wait'; renderSent();
+  try{
+    if(it.dataUrl) await api.uploadImage(id, {dataUrl: it.dataUrl, at: it.at, text: it.text, from: 'phone'});
+    else await api.addMemo(id, {at: it.at, type: it.type, text: it.text, from: 'phone'});
+    it.state = 'ok'; it.dataUrl = null;
+  }catch(e){ it.state = 'ng'; }
+  renderSent();
+}
+
+async function onFiles(files, fromCamera){
+  const text = $('#memo').value.trim();
+  for(const f of files){
+    // カメラで撮った写真は撮影時刻、アルバムからはファイルの時刻（当日のものだけ）を使う
+    const now = Date.now();
+    const at = !fromCamera && f.lastModified && Math.abs(now - f.lastModified) < 12*3600*1000 ? f.lastModified : now;
+    try{
+      const dataUrl = await resize(f);
+      const it = {at, text, dataUrl, thumb: await resize(f, 160), state: 'wait'};
+      items.push(it); send(it);
+    }catch(_){ alertErr('写真を読み込めませんでした'); }
+  }
+  if(text) $('#memo').value = '';
+}
+$('#cam').addEventListener('change', e => { onFiles([...e.target.files], true); e.target.value = ''; });
+$('#lib').addEventListener('change', e => { onFiles([...e.target.files], false); e.target.value = ''; });
+$('#sendMemo').addEventListener('click', () => {
+  const text = $('#memo').value.trim(); if(!text) return;
+  const it = {at: Date.now(), text, type, state: 'wait'}; items.push(it); send(it); $('#memo').value = '';
+});
+
+function alertErr(m){ const e = $('#err'); e.textContent = m; e.hidden = false; setTimeout(() => e.hidden = true, 4000); }
+
+async function refresh(){
+  try{
+    const info = await api.getPhoneInfo(id);
+    $('#title').textContent = info.title || '無題の講義';
+    $('#speaker').textContent = info.speaker || '';
+    const s = $('#sess'); s.hidden = false;
+    s.textContent = info.session ? `● 記録中：${info.session.name}` : 'セッション開始前（送ったものは講義に記録されます）';
+    s.classList.toggle('live', !!info.session);
+    $('#main').hidden = false;
+  }catch(e){
+    $('#title').textContent = '講義を開けませんでした';
+    const er = $('#err'); er.hidden = false;
+    er.textContent = 'PCと同じGoogleアカウントでログインしているか確認し、PCの「スマホと連携」のQRコードを読み直してください。';
+  }
+}
+if(!id){ $('#title').textContent = 'PCの「スマホと連携」のQRコードから開いてください'; }
+else { renderTypes(); refresh(); setInterval(refresh, 30000); }
+window.addEventListener('beforeunload', e => { if(items.some(i => i.state !== 'ok')){ e.preventDefault(); e.returnValue = ''; } });
+})();
+</script>
+</body>
+</html>
