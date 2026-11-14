@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.4.3';
+export const APP_VERSION = '0.4.4';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -415,7 +415,7 @@ function autosize() {
 }));
 
 /* ============================== 表示の切り替え（広く表示・文字起こしをたたむ） ============================== */
-const VIEW = Object.assign({ focus: false, tx: true, memoH: 0 }, ls('view') || {});
+const VIEW = Object.assign({ focus: false, tx: true, memoH: 0, photo: 'm', printPhoto: 'm' }, ls('view') || {});
 function applyView() {
   document.body.classList.toggle('focus', VIEW.focus);
   // 広く表示：タブとセッション操作を上の帯へ。戻すときは元の場所へ
@@ -427,7 +427,21 @@ function applyView() {
   fb.innerHTML = VIEW.focus ? '⤡<span class="lbl"> 元の表示</span>' : '⤢<span class="lbl"> 広く表示</span>';
   fb.title = VIEW.focus ? '隠した講義の情報や表示を元に戻します' : '講義の情報や表示を隠して、記録の画面を広くします';
   $('#memoIn').style.height = ''; autosize();
+  applyPhotoSize();
 }
+/* メモ欄の写真の大きさ。欄の幅が足りないときは回り込ませず、写真の下に文字を置く */
+function applyPhotoSize() {
+  const p = PHOTO_SIZES.find((x) => x.k === VIEW.photo) || PHOTO_SIZES[1];
+  const feed = $('#feed');
+  feed.style.setProperty('--photo-w', p.feed ? p.feed + 'px' : '100%');
+  const w = $('#fScroll').clientWidth;
+  feed.classList.toggle('nowrap', !p.feed || w - p.feed < 220);
+  const sel = $('#photoSize');
+  if (!sel.options.length) sel.innerHTML = PHOTO_SIZES.map((x) => `<option value="${x.k}">${x.label}</option>`).join('');
+  sel.value = p.k;
+}
+$('#photoSize').addEventListener('change', (e) => { setView({ photo: e.target.value }); scrollBottom('#fScroll'); });
+if (window.ResizeObserver) new ResizeObserver(() => applyPhotoSize()).observe($('#fScroll'));
 function setView(patch) { Object.assign(VIEW, patch); ls('view', VIEW); applyView(); }
 $('#focusBtn').addEventListener('click', () => setView({ focus: !VIEW.focus }));
 $('#txClose').addEventListener('click', () => setView({ tx: false }));
@@ -535,32 +549,76 @@ function download(blob, name) {
 const ext = (mime) => (/ogg/.test(mime) ? 'ogg' : /mp4|aac/.test(mime) ? 'm4a' : 'webm');
 const blobToDataUrl = (b) => new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
 
+/* 写真の大きさ（印刷とメモ欄で共通）。幅の割合が半分以下なら、写真の横に文字を回り込ませる */
+const PHOTO_SIZES = [
+  { k: 's', label: '小', print: 28, feed: 140 },
+  { k: 'm', label: '中', print: 42, feed: 200 },
+  { k: 'l', label: '大', print: 62, feed: 300 },
+  { k: 'xl', label: '幅いっぱい', print: 100, feed: 0 },
+];
 async function printView() {
   const w = window.open('', '_blank');
   if (!w) { toast('ポップアップが止められました。許可してからもう一度押してください'); return; }
-  const L = S.lec; let body = `<h1>${esc(L.title || '無題の講義')}</h1><p>講師：${esc(L.speaker)}　日付：${esc(L.date)}　会場：${esc(L.venue)}</p>`;
+  const L = S.lec;
+  let body = `<h1>${esc(L.title || '無題の講義')}</h1><p class="meta">講師：${esc(L.speaker)}　日付：${esc(L.date)}　会場：${esc(L.venue)}</p>`;
   for (const s of exportGroups()) {
     body += `<h2>${esc(s.name)}${range(s)}</h2>`;
     const sum = (L.summaries || {})[s.id]; if (sum && sum.text) body += `<h3>要約</h3><div class="pre">${esc(sum.text)}</div>`;
     const ms = S.memos.filter((m) => inGroup(s, m));
+    let memoHtml = '', txHtml = '';
     if (ms.length) {
-      body += '<h3>メモ・写真</h3><ul>';
+      memoHtml += '<h3>メモ・写真</h3><div class="memos">';
       for (const m of ms) {
-        let img = ''; if (m.imageId) { const b = await store.getImage(m.imageId); if (b) img = `<br><img src="${await blobToDataUrl(b)}" alt="">`; }
-        body += `<li>${hm(m.at)} ${TAGS[m.type] ? '【' + TAGS[m.type] + '】' : ''}${esc(m.text)}${img}</li>`;
+        let img = ''; if (m.imageId) { const b = await store.getImage(m.imageId); if (b) img = `<img src="${await blobToDataUrl(b)}" alt="写真 ${hm(m.at)}">`; }
+        memoHtml += `<div class="memo">${img}<span class="tm">${hm(m.at)}</span>${TAGS[m.type] ? '【' + TAGS[m.type] + '】' : ''}${esc(m.text)}</div>`;
       }
-      body += '</ul>';
+      memoHtml += '</div>';
     }
     const tx = s.outside ? { kind: '速報', lines: S.transcript.filter((t) => inGroup(s, t)) } : sessionText(s);
-    if (tx.lines.length) body += `<h3>文字起こし（${tx.kind}）</h3>` + tx.lines.map((t) => `<p class="t"><span>${hm(t.at)}</span>${esc(t.text)}</p>`).join('');
+    if (tx.lines.length) txHtml = `<h3>文字起こし（${tx.kind}）</h3>` + tx.lines.map((t) => `<p class="t"><span>${hm(t.at)}</span>${esc(t.text)}</p>`).join('');
+    // 縦に並べる：メモ→文字起こし。横に並べる：左に文字起こし、右にメモ
+    if (memoHtml || txHtml) body += `<div class="cols"><div class="col-tx">${txHtml}</div><div class="col-memo">${memoHtml}</div></div>`;
   }
-  w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(L.title || '講義メモ')}</title><style>
-    body{font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;max-width:760px;margin:24px auto;padding:0 16px;line-height:1.7;color:#111}
-    h1{font-size:22px}h2{font-size:17px;border-bottom:2px solid #0F5257;padding-bottom:4px;margin-top:28px}h3{font-size:14px;color:#0F5257}
-    img{max-width:60%;margin:6px 0;border:1px solid #ccc}.pre{white-space:pre-wrap}.t{margin:2px 0;font-size:13px}.t span{color:#666;margin-right:10px;font-family:monospace}
-    li{margin:4px 0}</style></head><body>${body}<script>onload=()=>print()<\/script></body></html>`);
+  const size = VIEW.printPhoto || 'm';
+  const side = VIEW.printSide ? ' side' : '';
+  const opts = PHOTO_SIZES.map((p) => `<label><input type="radio" name="sz" value="${p.k}" ${p.k === size ? 'checked' : ''}> ${p.label}</label>`).join('');
+  const css = PHOTO_SIZES.map((p) => `body.sz-${p.k} .memo img{width:${p.print}%}` + (p.print <= 50 ? `body.sz-${p.k}.wrap .memo img{float:left;margin:4px 16px 8px 0}` : '')).join('\n');
+  w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(L.title || '講義メモ')}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap"><style>
+body{font-family:"BIZ UDPGothic","Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;max-width:760px;margin:0 auto;padding:0 16px 24px;line-height:1.75;color:#111}
+h1{font-size:22px;margin:20px 0 4px}h2{font-size:17px;border-bottom:2px solid #1B3A6B;padding-bottom:4px;margin-top:28px;clear:both}h3{font-size:14px;color:#1B3A6B;clear:both}
+.meta{color:#444;margin:0}.pre{white-space:pre-wrap}.t{margin:2px 0;font-size:13px}.t span,.tm{color:#666;margin-right:10px;font-family:monospace}
+.memos::after{content:"";display:block;clear:both}.memo{margin:6px 0}
+.memo img{display:block;height:auto;margin:6px 0;border:1px solid #ccc;border-radius:4px;break-inside:avoid}
+${css}
+.bar{position:sticky;top:0;background:#F2F6FA;border-bottom:1px solid #D9E2EC;margin:0 -16px;padding:10px 16px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:14px;z-index:1}
+.bar button{font:inherit;border:1.5px solid #1B3A6B;background:#1B3A6B;color:#fff;border-radius:999px;padding:5px 16px;cursor:pointer}
+.bar .hint{color:#555;font-size:12px}
+@media print{.bar{display:none}body{max-width:none}}
+.cols{display:flex;flex-direction:column}.col-memo{order:1}.col-tx{order:2}
+body.side{max-width:1180px}
+body.side .cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:28px;align-items:start}
+body.side .col-tx{order:0}body.side .col-memo{order:0;border-left:1px solid #D9E2EC;padding-left:20px}
+body.side .col-tx:empty,body.side .col-memo:empty{display:none}
+@page{margin:14mm}
+</style></head><body class="sz-${size} wrap${side}">
+<div class="bar"><b>写真の大きさ</b>${opts}<label><input type="checkbox" id="wrap" checked> 写真の横に文字を回り込ませる</label><span class="hint">（小・中のとき）</span><label><input type="checkbox" id="side"${side ? ' checked' : ''}> 文字起こしとメモを横に並べる</label><span class="hint">（印刷は横向きがおすすめ）</span><span style="flex:1"></span><button type="button" id="pr">印刷・PDFに保存</button></div>
+${body}
+<script>
+document.querySelectorAll('input[name=sz]').forEach(function(r){r.onchange=function(){document.body.className=document.body.className.replace(/sz-\\w+/,'sz-'+r.value);try{opener&&opener.postMessage({kougiPrintPhoto:r.value},'*')}catch(e){}}});
+document.getElementById('wrap').onchange=function(e){document.body.classList.toggle('wrap',e.target.checked)};
+document.getElementById('side').onchange=function(e){document.body.classList.toggle('side',e.target.checked);try{opener&&opener.postMessage({kougiPrintSide:e.target.checked},'*')}catch(x){}};
+document.getElementById('pr').onclick=function(){print()};
+<\/script></body></html>`);
   w.document.close();
 }
+// 印刷画面で選んだ写真の大きさを覚える
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin && e.origin !== 'null') return;
+  const v = e.data && e.data.kougiPrintPhoto;
+  if (PHOTO_SIZES.some((p) => p.k === v)) setView({ printPhoto: v });
+  if (e.data && typeof e.data.kougiPrintSide === 'boolean') setView({ printSide: e.data.kougiPrintSide });
+});
 async function exportFolder() {
   let dir;
   try { dir = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch { return; }

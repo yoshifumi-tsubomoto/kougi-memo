@@ -140,6 +140,25 @@ await step('拡大した写真を、写真を押しても Esc でも閉じられ
   await p.keyboard.press('Escape');
   if (await p.isVisible('#imgModal')) throw new Error('Esc で閉じない');
 });
+await step('写真の大きさを変えられる（メモ欄・印刷）', async () => {
+  await p.selectOption('#photoSize', 'l');
+  const w = await p.$eval('#feed img', (i) => i.getBoundingClientRect().width);
+  if (Math.abs(w - 300) > 2) throw new Error('メモ欄の写真が大きくならない：' + w);
+  await p.selectOption('#photoSize', 'xl');
+  if ((await p.$eval('#feed img', (i) => getComputedStyle(i).float)) !== 'none') throw new Error('幅いっぱいで回り込みが止まらない');
+  await p.selectOption('#photoSize', 'm');
+  await p.click('[data-tab="vSum"]');
+  const [pop] = await Promise.all([p.waitForEvent('popup'), p.click('[data-act="print"]')]);
+  await pop.waitForFunction(() => !!document.querySelector('input[name=sz]')?.onchange);
+  await pop.click('.bar input[value="s"]');
+  if ((await pop.$eval('.memo img', (i) => getComputedStyle(i).float)) !== 'left') throw new Error('印刷画面で回り込まない');
+  await pop.click('.bar input[value="l"]');
+  if ((await pop.$eval('.memo img', (i) => getComputedStyle(i).float)) !== 'none') throw new Error('大のときに回り込んでしまう');
+  await pop.click('#side');
+  if ((await pop.$eval('.cols', (c) => getComputedStyle(c).display)) !== 'grid') throw new Error('横に並ばない');
+  await pop.close();
+  await p.click('[data-tab="vLive"]');
+});
 // スマホとの連携（手元に仲介サーバーを立てて、PCとスマホの2つの画面で確かめる）
 let peerServer = null;
 try {

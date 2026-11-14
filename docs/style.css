@@ -161,6 +161,8 @@ body.focus .bar{gap:6px}
 
 .feed{list-style:none;margin:0;padding:0;display:block}
 .feed::after{content:"";display:block;clear:both}
+.feed.nowrap .fi img{float:none;display:block;margin:4px 0 6px}
+.mini-sel{width:auto;padding:1px 6px;font-size:12px;border-radius:999px}
 /* メモは普通の文章の流れで並べる。写真は左に寄せ、後に続くメモの文字が写真の横に回り込む */
 .fi{display:block;position:relative;padding:5px 26px 5px 0;overflow-wrap:anywhere}
 .fi .tm{display:inline-block;min-width:70px;font-family:var(--f-mono);font-size:12px;color:var(--muted-2)}
@@ -174,7 +176,7 @@ body.focus .bar{gap:6px}
 .fi.quote .tag{background:var(--quote-soft);color:var(--quote);border-color:color-mix(in srgb,var(--quote) 30%,transparent)}
 .fi.quote .t{font-style:italic;color:var(--quote)}
 .fi.photo .tag{background:var(--teal-soft);color:var(--teal);border-color:color-mix(in srgb,var(--teal) 30%,transparent)}
-.fi img{float:left;position:relative;z-index:1;width:min(200px,42%);height:auto;margin:4px 14px 8px 0;border-radius:12px;cursor:zoom-in;border:1px solid var(--glass-edge);box-shadow:0 4px 14px rgba(27,58,107,.1)}
+.fi img{float:left;position:relative;z-index:1;width:var(--photo-w,200px);max-width:100%;height:auto;margin:4px 14px 8px 0;border-radius:12px;cursor:zoom-in;border:1px solid var(--glass-edge);box-shadow:0 4px 14px rgba(27,58,107,.1)}
 .fi .x{position:absolute;top:4px;right:0;border:0;background:transparent;color:var(--muted);font-size:13px;opacity:.5}
 .fi:hover .x,.fi .x:focus-visible{opacity:1}
 .composer{border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);padding:10px 16px 14px;display:grid;gap:8px}
