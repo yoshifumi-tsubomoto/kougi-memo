@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.5.0';
+export const APP_VERSION = '0.6.0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -153,7 +153,10 @@ const Live = {
       setTimeout(() => { if (this.running) this.open(); }, this.lastErr === 'network' ? 3000 : 300);
     };
     this.rec = r;
-    try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); }
+    // 既定のマイク以外を選んでいるときは、その音声を音声認識にも渡す（対応しているブラウザだけ。対応していなければ既定のマイクを使う）
+    const track = audioSourceId() && Rec.stream ? Rec.stream.getAudioTracks()[0] : null;
+    try { if (track && track.readyState === 'live') r.start(track); else r.start(); }
+    catch { try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); } }
   },
   stop() { this.running = false; this.lastErr = ''; try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
   async push(text, at) {
@@ -170,8 +173,8 @@ const Rec = {
   active: false, stream: null, mr: null, timer: null, mime: '', count: 0,
   async start() {
     if (!window.MediaRecorder) { setInd('Rec', 'warn', '録音 未対応'); return; }
-    try { this.stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch (e) { setInd('Rec', 'warn', '録音 マイクが使えません'); toast('録音を開始できませんでした：' + errMsg(e)); return; }
+    this.stream = await openAudioSource();
+    if (!this.stream) { setInd('Rec', 'warn', '録音 マイクが使えません'); return; }
     this.mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
     this.active = true; this.begin();
   },
@@ -204,14 +207,164 @@ const Rec = {
   },
 };
 
+/* ============================== 音声の入力（音源の選択） ==============================
+ * ''      … いつものマイク（ブラウザの既定）
+ * 'share' … 画面共有の音声（Zoom・YouTube などのタブ、または画面全体）
+ * それ以外 … 選んだ機器（ステレオミキサー・仮想オーディオ機器・外付けマイクなど）の deviceId */
+const audioSourceId = () => ls('audioIn') || '';
+async function openAudioSource() {
+  const src = audioSourceId();
+  if (src === 'share') {
+    const t = Screen.audioTrack();
+    if (t) return new MediaStream([t.clone()]);
+    toast('画面共有の音声がありません。「🖥」で共有するとき「タブの音声も共有する」をオンにしてください。いまは既定のマイクで録音します', 8000);
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: src && src !== 'share' ? { deviceId: { exact: src } } : true });
+  } catch (e) {
+    if (src && src !== 'share') {
+      toast('選んだ音声の入力が見つかりません。既定のマイクで録音します', 6000);
+      try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { /* 下へ */ }
+    }
+    toast('録音を開始できませんでした：' + errMsg(e)); return null;
+  }
+}
+async function renderAudioIn() {
+  const sel = $('#audioIn'); if (!sel) return;
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications'); } catch { /* 一覧なし */ }
+  const cur = audioSourceId();
+  sel.innerHTML = '<option value="">いつものマイク（既定）</option>'
+    + devs.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || `音声の入力 ${i + 1}`)}${/stereo|ステレオ|mix|ミキサー|cable|blackhole|loopback/i.test(d.label) ? '（PCの音）' : ''}</option>`).join('')
+    + '<option value="share">画面共有の音声（Zoom・YouTube などのタブ）</option>';
+  sel.value = [...sel.options].some((o) => o.value === cur) ? cur : '';
+  $('#audioInHint').hidden = !devs.some((d) => !d.label) ;
+}
+
+/* ============================== 画面の共有とスクリーンショット ============================== */
+const Screen = {
+  stream: null, video: null, region: ls('shotRegion'), timer: null, lastShot: null, prev: null,
+  audioTrack() { return this.stream ? this.stream.getAudioTracks().find((t) => t.readyState === 'live') || null : null; },
+  async start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { toast('このブラウザでは画面の共有ができません（Chrome か Edge のパソコン版で使えます）'); return; }
+    try {
+      this.stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: true, selfBrowserSurface: 'exclude', systemAudio: 'include' });
+    } catch { return; }   // 共有をやめた
+    this.video = document.createElement('video');
+    this.video.muted = true; this.video.playsInline = true; this.video.srcObject = this.stream;
+    await this.video.play().catch(() => {});
+    this.stream.getVideoTracks()[0].addEventListener('ended', () => this.stop());
+    renderShare();
+    if (!this.region) openRegion();
+    else toast('画面の共有を始めました。「📷 撮る」でスライドを写真にします');
+  },
+  stop() {
+    this.setAuto(false);
+    if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
+    this.stream = null; this.video = null;
+    renderShare();
+  },
+  frame(maxW) {
+    const v = this.video; if (!v || !v.videoWidth) return null;
+    const r = this.region || { x: 0, y: 0, w: 1, h: 1 };
+    const sx = r.x * v.videoWidth, sy = r.y * v.videoHeight, sw = r.w * v.videoWidth, sh = r.h * v.videoHeight;
+    const k = Math.min(1, maxW / sw);
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(sw * k)); c.height = Math.max(1, Math.round(sh * k));
+    c.getContext('2d').drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c;
+  },
+  async shot(auto) {
+    if (!S.lec) return;
+    const c = this.frame(1600); if (!c) { toast('画面がまだ映っていません'); return; }
+    const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.85));
+    const at = Date.now(); const s = sessionAt(at) || openSession();
+    const m = await store.addImage(S.lec.id, { blob, at, sessionId: s ? s.id : '', text: auto ? '（スライドが変わったので自動で撮影）' : '', from: 'screen' });
+    S.memos.push(m); renderFeed(true); markChanged();
+    this.lastShot = this.sig();
+    if (!auto) toast('📷 撮りました');
+  },
+  // 範囲の画面を 32×18 の白黒にした「目印」。スライドが変わったかを比べる
+  sig() {
+    const c = this.frame(32); if (!c) return null;
+    const t = document.createElement('canvas'); t.width = 32; t.height = 18;
+    const g = t.getContext('2d'); g.drawImage(c, 0, 0, 32, 18);
+    const d = g.getImageData(0, 0, 32, 18).data; const out = new Uint8Array(32 * 18);
+    for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    return out;
+  },
+  diff(a, b) { if (!a || !b) return 255; let n = 0; for (let i = 0; i < a.length; i++) n += Math.abs(a[i] - b[i]); return n / a.length; },
+  setAuto(on) {
+    clearInterval(this.timer); this.timer = null;
+    const cb = $('#autoShot'); if (cb) cb.checked = !!on;
+    if (!on) return;
+    this.lastShot = this.lastShot || this.sig(); this.prev = null;
+    // 2秒ごとに見て、前に撮ったときから大きく変わり、しかも止まっている（めくり終わった）ときに撮る
+    this.timer = setInterval(() => {
+      const cur = this.sig(); if (!cur) return;
+      const changed = this.diff(cur, this.lastShot) > 10;
+      const settled = this.prev && this.diff(cur, this.prev) < 2;
+      this.prev = cur;
+      if (changed && settled) this.shot(true);
+    }, 2000);
+  },
+};
+function renderShare() {
+  const on = !!Screen.stream;
+  $('#shareBar').hidden = !on;
+  $('#shareBtn').classList.toggle('primary', on);
+  $('#shareBtn').title = on ? '画面を共有中' : '画面を共有して、スライドを撮る';
+  if (on) $('#shareAudio').textContent = Screen.audioTrack() ? '音声も共有中' : '音声なし';
+}
+/* 範囲を決める：共有した画面の上をドラッグする */
+let regionDrag = null;
+function openRegion() {
+  const v = Screen.video; if (!v || !v.videoWidth) { setTimeout(openRegion, 300); return; }
+  const cv = $('#regionCanvas');
+  const k = Math.min(1, (window.innerWidth * 0.9) / v.videoWidth, (window.innerHeight * 0.62) / v.videoHeight);
+  cv.width = Math.round(v.videoWidth * k); cv.height = Math.round(v.videoHeight * k);
+  regionDrag = { r: Screen.region ? { ...Screen.region } : null };
+  drawRegion();
+  $('#regionModal').hidden = false;
+}
+function drawRegion() {
+  const cv = $('#regionCanvas'), g = cv.getContext('2d'), v = Screen.video; if (!v) return;
+  g.drawImage(v, 0, 0, cv.width, cv.height);
+  const r = regionDrag && regionDrag.r;
+  if (r) {
+    g.fillStyle = 'rgba(20,36,59,.55)';
+    const x = r.x * cv.width, y = r.y * cv.height, w = r.w * cv.width, h = r.h * cv.height;
+    g.fillRect(0, 0, cv.width, y); g.fillRect(0, y + h, cv.width, cv.height - y - h); g.fillRect(0, y, x, h); g.fillRect(x + w, y, cv.width - x - w, h);
+    g.strokeStyle = '#FFE45C'; g.lineWidth = 3; g.strokeRect(x, y, w, h);
+  }
+}
+function regionPoint(e) {
+  const cv = $('#regionCanvas'), b = cv.getBoundingClientRect();
+  return { x: Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)), y: Math.min(1, Math.max(0, (e.clientY - b.top) / b.height)) };
+}
+$('#regionCanvas').addEventListener('pointerdown', (e) => { e.preventDefault(); $('#regionCanvas').setPointerCapture(e.pointerId); regionDrag.start = regionPoint(e); });
+$('#regionCanvas').addEventListener('pointermove', (e) => {
+  if (!regionDrag || !regionDrag.start) return;
+  const a = regionDrag.start, b = regionPoint(e);
+  regionDrag.r = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+  drawRegion();
+});
+$('#regionCanvas').addEventListener('pointerup', () => { if (regionDrag) regionDrag.start = null; });
+function saveRegion(r) {
+  Screen.region = r && r.w > 0.03 && r.h > 0.03 ? r : null;
+  ls('shotRegion', Screen.region);
+  $('#regionModal').hidden = true;
+  Screen.lastShot = null;
+  toast(Screen.region ? 'この範囲を撮ります。「📷 撮る」（Alt+S）で撮影' : '画面全体を撮ります。「📷 撮る」（Alt+S）で撮影');
+}
+
 /* ============================== セッション ============================== */
 async function startSession() {
   const s = { id: store.newId(), name: `セッション${sessions().length + 1}`, start: Date.now(), end: null };
   S.lec.sessions = [...sessions(), s];
-  Live.start();   // クリックの直後に呼ぶ（マイクの許可のため）
   await saveLecture({ sessions: S.lec.sessions, changedAt: Date.now() });
   refreshOption();
-  await Rec.start();
+  await Rec.start();   // 先に音源を開く（選んだ音源を音声認識にも渡すため）
+  Live.start();
   keepAwake();
   renderCtrl(); renderTranscript(); sendInfo();
 }
@@ -389,7 +542,7 @@ function renderFeed(scroll) {
   $('#feed').innerHTML = items.map((m) => {
     const tag = TAGS[m.type];
     // 写真は左に寄せ、続くメモの文字が写真の横に回り込むようにする
-    return `<li class="fi ${esc(m.type)}">${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}<span class="tm">${hms(m.at)}</span><span class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.from === 'phone' ? '<span class="from"> 📱</span>' : m.from === 'import' ? '<span class="from"> （撮影時刻で配置）</span>' : ''}</span><button class="x" type="button" data-del="${esc(m.id)}" title="削除" aria-label="削除">×</button></li>`;
+    return `<li class="fi ${esc(m.type)}">${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}<span class="tm">${hms(m.at)}</span><span class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.from === 'phone' ? '<span class="from"> 📱</span>' : m.from === 'screen' ? '<span class="from"> 🖥</span>' : m.from === 'import' ? '<span class="from"> （撮影時刻で配置）</span>' : ''}</span><button class="x" type="button" data-del="${esc(m.id)}" title="削除" aria-label="削除">×</button></li>`;
   }).join('');
   document.querySelectorAll('#feed img[data-img]').forEach(async (img) => {
     img.addEventListener('load', () => scrollBottom('#fScroll'), { once: true });   // 写真が読み込まれて高さが変わっても、いちばん下を見せる
@@ -677,6 +830,7 @@ async function openSettings() {
     <div style="margin-top:6px">${left.length ? `⚠ まだ書き出していない講義が <b>${left.length}</b> 件あります（講義の一覧で「●」の付いたもの）` : '✓ すべての講義を書き出し済みです'}</div>
     <div class="sumrow" style="margin-top:8px"><label class="btn">バックアップを読み込む<input type="file" id="importIn" accept=".json,application/json" hidden></label></div>`;
   refreshInstall();
+  renderAudioIn();
   $('#looks').innerHTML = LOOKS.map((l) => `<label class="look"><input type="radio" name="look" value="${l.k}" ${currentLook() === l.k ? 'checked' : ''}><span class="sw ${l.k}"></span><span><b>${l.label}</b><small>${l.note}</small></span></label>`).join('');
   const cur = ls('engine') || 'none';
   $('#engines').innerHTML = ENGINES.map((e) => `<label class="${e.ready ? '' : 'off'}"><input type="radio" name="engine" value="${e.k}" ${cur === e.k ? 'checked' : ''} ${e.ready ? '' : 'disabled'}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
@@ -705,6 +859,7 @@ $('#imgIn').addEventListener('change', (e) => { addImages([...e.target.files]); 
 $('#settingsBtn').addEventListener('click', openSettings);
 $('#linkBtn').addEventListener('click', openLink);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal:not([hidden])').forEach((m) => (m.hidden = true)); });
+document.addEventListener('keydown', (e) => { if (e.altKey && (e.key === 's' || e.key === 'S') && Screen.stream) { e.preventDefault(); Screen.shot(false); } });
 document.addEventListener('keydown', (e) => { if (e.altKey && /^[1-5]$/.test(e.key) && S.lec) { e.preventDefault(); S.type = TYPES[+e.key - 1].k; renderTypes(); } });
 document.addEventListener('paste', (e) => {
   const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
@@ -720,6 +875,8 @@ document.addEventListener('change', async (e) => {
   if (e.target.id === 'importIn' && e.target.files[0]) { $('#settings').hidden = true; importFile(e.target.files[0]); e.target.value = ''; return; }
   if (e.target.name === 'engine') { ls('engine', e.target.value); return; }
   if (e.target.name === 'look') { setLook(e.target.value); return; }
+  if (e.target.id === 'audioIn') { ls('audioIn', e.target.value || null); toast(recording() ? '次のセッションから、この音声の入力を使います' : 'この音声の入力を使います'); return; }
+  if (e.target.id === 'autoShot') { Screen.setAuto(e.target.checked); if (e.target.checked) toast('スライドが変わったら自動で撮ります'); return; }
   const sn = e.target.closest('[data-sname]');
   if (sn && sn.tagName === 'INPUT') {
     const s = sessions().find((x) => x.id === sn.dataset.sname); if (!s) return;
@@ -736,7 +893,7 @@ document.addEventListener('click', async (e) => {
   const sid = b.dataset.sid, s = sessions().find((x) => x.id === sid);
   switch (b.dataset.act) {
     case 'start': startSession(); break;
-    case 'resume': Live.start(); await Rec.start(); keepAwake(); renderCtrl(); break;
+    case 'resume': await Rec.start(); Live.start(); keepAwake(); renderCtrl(); break;
     case 'next': nextSession(); break;
     case 'end': endSession(); break;
     case 'prompt': {
@@ -755,6 +912,15 @@ document.addEventListener('click', async (e) => {
     case 'nudge-folder': S.tab = 'vSum'; render(); if (window.showDirectoryPicker) exportFolder(); break;
     case 'nudge-backup': S.tab = 'vSum'; render(); break;
     case 'nudge-close': $('#nudge').hidden = true; break;
+    case 'share': Screen.stream ? Screen.stop() : Screen.start(); break;
+    case 'shot': Screen.shot(false); break;
+    case 'region': openRegion(); break;
+    case 'region-ok': saveRegion(regionDrag && regionDrag.r); break;
+    case 'region-all': saveRegion(null); break;
+    case 'share-stop': Screen.stop(); break;
+    case 'audio-refresh':
+      try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop()); } catch { /* 許可されなかった */ }
+      renderAudioIn(); break;
     case 'install': $('#settings').hidden = true; doInstall(); break;
     case 'link-stop': stopLink(); $('#linkModal').hidden = true; toast('スマホとの連携を止めました'); break;
     case 'link-new': newLinkId(); break;

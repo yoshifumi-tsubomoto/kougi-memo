@@ -249,6 +249,12 @@ details.audio summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .welcome .lead{margin:0;font-size:15px;color:var(--muted)}
 .welcome ol{margin:0;padding-left:1.3em;color:var(--muted)}
 
+/* 画面の共有とスクリーンショット */
+.sharebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 10px;border-radius:14px;background:var(--rec-soft);border:1px solid color-mix(in srgb,var(--rec) 25%,transparent)}
+.modal .box.wide{max-width:min(96vw,1200px)}
+.regioncv{max-width:100%;border-radius:10px;cursor:crosshair;touch-action:none;background:#000;justify-self:center}
+#audioIn{max-width:100%}
+
 /* スマホと連携 */
 .qrbox{display:grid;justify-items:center;gap:8px;text-align:center}
 .qrbox .qr{background:#fff;padding:8px;border-radius:12px;width:min(260px,70vw)}
