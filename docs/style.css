@@ -118,7 +118,8 @@ select{border:1px solid var(--line);background:var(--glass-strong);border-radius
 body.focus #metaBox,body.focus .brand-text{display:none!important}
 body.focus .ctrl{margin-top:8px;padding:6px 14px}
 body.focus .ind > span > span{display:none}
-body.focus .ind > span{padding:4px 7px}
+body.focus .ind > span{padding:1px 9px}
+body.focus .ind > span::after{content:attr(data-short);font-size:11.5px}
 body.focus #vLive.on{padding-top:10px}
 /* 広く表示のときは、タブとセッション操作を上の帯に入れて1行にまとめる */
 .slot{display:contents}

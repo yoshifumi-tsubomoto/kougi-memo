@@ -173,6 +173,25 @@ await step('写真の大きさを変えられる（メモ欄・印刷）', async
   await p.evaluate(() => { window.open = window.__open; });
   await p.click('[data-tab="vLive"]');
 });
+await step('清書の試験ページが開き、録音を選べる', async () => {
+  const b = await ctx.newPage();
+  b.on('pageerror', (e) => errors.push('試験ページのエラー：' + e.message));
+  await b.goto(base + 'bench.html');
+  await b.waitForFunction(() => !document.querySelector('#chunks').textContent.includes('探しています'));
+  // 1秒の無音の WAV を選ぶ
+  const wav = Buffer.alloc(44 + 32000);
+  wav.write('RIFF', 0); wav.writeUInt32LE(36 + 32000, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(16000, 24); wav.writeUInt32LE(32000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(32000, 40);
+  await b.setInputFiles('#file', { name: 'test.wav', mimeType: 'audio/wav', buffer: wav });
+  if (!(await b.textContent('#picked')).includes('test.wav')) throw new Error('音声を選べない');
+  await b.close();
+});
+await step('広く表示のとき、状態の点に短い文字が付く', async () => {
+  await p.click('#focusBtn');
+  const t = await p.$eval('.ind > span[data-short="録音"]', (e) => getComputedStyle(e, '::after').content);
+  await p.click('#focusBtn');
+  if (!t.includes('録音')) throw new Error('文字が付かない：' + t);
+});
 // スマホとの連携（手元に仲介サーバーを立てて、PCとスマホの2つの画面で確かめる）
 let peerServer = null;
 try {

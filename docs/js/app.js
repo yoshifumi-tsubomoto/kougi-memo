@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 
-export const APP_VERSION = '0.4.5';
+export const APP_VERSION = '0.5.0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -27,7 +27,7 @@ function setLook(k) {
 const TAGS = { key: '要点', q: '質問', todo: 'TODO', quote: '引用', photo: '写真' };
 const ENGINES = [
   { k: 'none', label: '① 清書しない（リアルタイムの速報だけ）', note: '設定はいりません', ready: true },
-  { k: 'browser', label: '② このPCの中で清書する', note: '音声を外部に送りません。PCの性能によって時間がかかります（準備中）' },
+  { k: 'browser', label: '② このPCの中で清書する', note: '音声を外部に送りません。PCの性能によって時間がかかります（準備中）。<a href="bench.html" target="_blank" rel="noopener">このPCでの速さを試す</a>' },
   { k: 'openai', label: '③ OpenAI で清書する', note: '自分のAPIキーが必要です（準備中）' },
   { k: 'gemini', label: '④ Gemini で清書する', note: '自分のAPIキーが必要です（準備中）' },
 ];
