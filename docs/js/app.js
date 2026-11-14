@@ -38,16 +38,42 @@ const openSession = () => sessions().filter((s) => !s.end).pop() || null;
 function sessionAt(at) { const ss = sessions(); for (let i = ss.length - 1; i >= 0; i--) if (ss[i].start <= at && (!ss[i].end || at <= ss[i].end)) return ss[i]; return null; }
 const recording = () => Live.running || Rec.active;
 
+/* 書き出しの状態
+ * changedAt：記録が変わった時刻（メモ・写真・要約・セッション終了・講義の情報）
+ * exportedAt：「フォルダに書き出し」か「バックアップ」をした時刻 */
+function exportState(l) {
+  if (!l || !l.changedAt) return 'empty';
+  if (!l.exportedAt) return 'never';
+  return l.changedAt > l.exportedAt ? 'changed' : 'done';
+}
+const unexported = (l) => ['never', 'changed'].includes(exportState(l));
+const optLabel = (l) => `${unexported(l) ? '● ' : ''}${l.date}　${l.title || '無題の講義'}${unexported(l) ? '（未書き出し）' : ''}`;
+async function markChanged() {
+  if (!S.lec) return;
+  S.lec = await store.updateLecture(S.lec.id, { changedAt: Date.now() });
+  refreshOption();
+}
+async function markExported() {
+  S.lec = await store.updateLecture(S.lec.id, { exportedAt: Date.now() });
+  refreshOption(); $('#nudge').hidden = true;
+  if (S.tab === 'vSum') renderSummary();
+}
+function refreshOption() {
+  const o = [...$('#lecSel').options].find((x) => x.value === (S.lec && S.lec.id));
+  if (o) o.textContent = optLabel(S.lec);
+}
+
 /* ============================== 講義 ============================== */
 async function loadList(selectId) {
   S.list = await store.listLectures();
   $('#lecSel').innerHTML = '<option value="">講義を選ぶ…</option>' + S.list.map((l) =>
-    `<option value="${esc(l.id)}">${esc(l.date)}　${esc(l.title || '無題の講義')}</option>`).join('');
+    `<option value="${esc(l.id)}">${esc(optLabel(l))}</option>`).join('');
   $('#lecSel').value = selectId || (S.lec ? S.lec.id : '');
 }
 async function openLecture(id) {
   if (recording()) { toast('記録中は講義を切り替えられません。先にセッションを終了してください'); $('#lecSel').value = S.lec ? S.lec.id : ''; return; }
   Object.values(S.urls).forEach((u) => URL.revokeObjectURL(u)); S.urls = {};
+  $('#nudge').hidden = true;
   if (!id) { S.lec = null; ls('lastLecture', null); render(); return; }
   const d = await store.getLecture(id);
   if (!d.lecture) { S.lec = null; render(); return; }
@@ -69,8 +95,8 @@ function saveMeta() {
   clearTimeout(metaT);
   metaT = setTimeout(async () => {
     const p = {}; document.querySelectorAll('#metaBox [data-f]').forEach((i) => (p[i.dataset.f] = i.value));
-    S.lec = await store.updateLecture(S.lec.id, p);
-    const o = $('#lecSel').selectedOptions[0]; if (o) o.textContent = `${p.date}　${p.title || '無題の講義'}`;
+    S.lec = await store.updateLecture(S.lec.id, { ...p, changedAt: Date.now() });
+    refreshOption();
   }, 500);
 }
 async function saveLecture(patch) {
@@ -168,7 +194,8 @@ async function startSession() {
   const s = { id: store.newId(), name: `セッション${sessions().length + 1}`, start: Date.now(), end: null };
   S.lec.sessions = [...sessions(), s];
   Live.start();   // クリックの直後に呼ぶ（マイクの許可のため）
-  await saveLecture({ sessions: S.lec.sessions });
+  await saveLecture({ sessions: S.lec.sessions, changedAt: Date.now() });
+  refreshOption();
   await Rec.start();
   keepAwake();
   renderCtrl(); renderTranscript();
@@ -185,7 +212,8 @@ async function endSession() {
   Live.stop(); Rec.stop(); releaseWake();
   await saveLecture({ sessions: S.lec.sessions });
   renderCtrl();
-  toast('セッションを終了しました。「まとめ・出力」で要約できます');
+  await markChanged();
+  $('#nudge').hidden = false;   // 書き出しの案内
 }
 
 /* ============================== メモ・写真 ============================== */
@@ -194,9 +222,11 @@ async function addMemo() {
   const at = Date.now(); const s = sessionAt(at) || openSession();
   const m = await store.addMemo(S.lec.id, { at, sessionId: s ? s.id : '', type: S.type, text });
   S.memos.push(m); ta.value = ''; autosize(); renderFeed(true);
+  markChanged();
 }
 async function removeMemo(id) {
   await store.deleteMemo(id);
+  markChanged();
   S.memos = S.memos.filter((m) => m.id !== id); renderFeed();
 }
 function resizeImage(file, max = 1600) {
@@ -226,6 +256,7 @@ async function addImages(files) {
   }
   if (text) { $('#memoIn').value = ''; autosize(); }
   renderFeed(true);
+  markChanged();
 }
 async function imageUrl(imageId) {
   if (!S.urls[imageId]) { const b = await store.getImage(imageId); if (b) S.urls[imageId] = URL.createObjectURL(b); }
@@ -327,7 +358,7 @@ function renderSummary() {
       <span class="sp"></span>
       <button class="btn ghost danger" type="button" data-act="dellec">この講義を削除</button>
     </div>
-    <p class="note">記録はこのブラウザの中だけにあります。大事な講義は、終わったらバックアップかフォルダへの書き出しをしておいてください。</p></div>`;
+    ${exportNote()}</div>`;
   if (!ss.length) html += '<p class="empty">まだセッションがありません。「記録」でセッションを開始してください。</p>';
   for (const s of ss) {
     const tx = sessionText(s);
@@ -353,6 +384,14 @@ function renderSummary() {
     </div>`;
   }
   $('#sumWrap').innerHTML = html;
+}
+function exportNote() {
+  const st = exportState(S.lec);
+  const when = S.lec.exportedAt ? `${new Date(S.lec.exportedAt).toLocaleDateString('ja-JP')} ${hm(S.lec.exportedAt)}` : '';
+  if (st === 'done') return `<p class="state ok">✓ 書き出し済み（${when}）。その後の変更はありません。</p>`;
+  if (st === 'changed') return `<p class="state warn">⚠ 書き出した後（${when}）に変更があります。もう一度書き出してください。</p>`;
+  if (st === 'never') return '<p class="state warn">⚠ まだ書き出していません。記録はこのブラウザの中だけにあり、サイトのデータを消すと失われます。</p>';
+  return '<p class="note">記録はこのブラウザの中だけにあります。終わったら書き出しておいてください。</p>';
 }
 function buildPrompt(s, chars) {
   const tx = sessionText(s);
@@ -444,6 +483,7 @@ async function exportFolder() {
       for (const a of au) await write(d, `${hms(a.startAt).replace(/:/g, '')}_${safeName(names[a.sessionId])}.${ext(a.mime)}`, await store.getAudioBlob(a.id));
     }
     toast(`「${name}」フォルダに書き出しました`);
+    await markExported();
   } catch (e) { toast('書き出せませんでした：' + errMsg(e), 5000); }
 }
 async function copyText(text) {
@@ -466,11 +506,14 @@ async function importFile(file) {
 /* ============================== 設定画面 ============================== */
 async function openSettings() {
   const info = await store.storageInfo();
+  S.list = await store.listLectures();
+  const left = S.list.filter(unexported);
   const pct = info.quota ? Math.min(100, (info.usage / info.quota) * 100) : 0;
   $('#storeInfo').innerHTML = `
     <div>使用量：<b class="mono">${mb(info.usage)}</b>${info.quota ? ` ／ 使える目安 ${mb(info.quota)}` : ''}</div>
     <div class="meter"><i style="width:${pct.toFixed(1)}%"></i></div>
     <div style="margin-top:6px">${info.persisted ? '✅ ブラウザに記録を消されにくい設定になっています' : '⚠ ブラウザが容量不足のときに記録を消すことがあります。「アプリとして入れる」と消されにくくなります'}</div>
+    <div style="margin-top:6px">${left.length ? `⚠ まだ書き出していない講義が <b>${left.length}</b> 件あります（講義の一覧で「●」の付いたもの）` : '✓ すべての講義を書き出し済みです'}</div>
     <div class="sumrow" style="margin-top:8px"><label class="btn">バックアップを読み込む<input type="file" id="importIn" accept=".json,application/json" hidden></label></div>`;
   const cur = ls('engine') || 'none';
   $('#engines').innerHTML = ENGINES.map((e) => `<label class="${e.ready ? '' : 'off'}"><input type="radio" name="engine" value="${e.k}" ${cur === e.k ? 'checked' : ''} ${e.ready ? '' : 'disabled'}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
@@ -539,9 +582,13 @@ document.addEventListener('click', async (e) => {
       const text = document.querySelector(`[data-sum="${sid}"]`).value;
       const chars = +document.querySelector(`[data-chars="${sid}"]`).value || 400;
       await saveLecture({ summaries: { ...(S.lec.summaries || {}), [sid]: { text, chars, savedAt: Date.now() } } });
+      await markChanged();
       toast('要約を保存しました'); renderSummary();
       break;
     }
+    case 'nudge-folder': S.tab = 'vSum'; render(); if (window.showDirectoryPicker) exportFolder(); break;
+    case 'nudge-backup': S.tab = 'vSum'; render(); break;
+    case 'nudge-close': $('#nudge').hidden = true; break;
     case 'md': download(new Blob([toMarkdown()], { type: 'text/markdown' }), `${S.lec.date}_${safeName(S.lec.title)}.md`); break;
     case 'print': printView(); break;
     case 'folder': exportFolder(); break;
@@ -550,6 +597,7 @@ document.addEventListener('click', async (e) => {
       try {
         const data = await store.exportBackup(S.lec.id, { withAudio: $('#bkAudio').checked });
         download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `講義メモ_バックアップ_${S.lec.date}_${safeName(S.lec.title)}.json`);
+        await markExported();
       } catch (err) { toast('書き出せませんでした：' + errMsg(err)); }
       b.disabled = false;
       break;

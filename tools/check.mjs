@@ -27,13 +27,16 @@ await step('メモを追加できる', async () => {
   await p.press('#memoIn', 'Enter');
   await p.waitForSelector('#feed .fi.key');
 });
-await step('セッションを始めて録音が保存される', async () => {
+await step('セッションを始めて録音が保存され、書き出しの案内が出る', async () => {
   await p.click('[data-act="start"]');
   await p.waitForSelector('[data-act="next"]');
   await p.waitForTimeout(5500);           // テスト用の区切り（4秒）をまたぐ
   await p.click('[data-act="end"]');
+  await p.waitForSelector('#nudge:not([hidden])', { timeout: 3000 });
+  if (!(await p.locator('#lecSel option:checked').textContent()).includes('未書き出し')) throw new Error('一覧に「未書き出し」の印が出ない');
   await p.waitForTimeout(800);
   await p.click('[data-tab="vSum"]');
+  await p.waitForSelector('.state.warn');
   await p.waitForSelector('details.audio');
   const n = await p.locator('.alist li').count();
   if (n < 2) throw new Error(`録音の区切りが ${n} 件`);
@@ -50,9 +53,11 @@ await step('Markdown を保存できる', async () => {
   const text = await (await dl.createReadStream()).toArray().then((c) => Buffer.concat(c).toString());
   if (!text.includes('# テスト講義') || !text.includes('【要点】大事なところ')) throw new Error('中身が足りない');
 });
-await step('バックアップを書き出して読み込める', async () => {
+await step('バックアップを書き出すと「書き出し済み」になり、読み込める', async () => {
   const [dl] = await Promise.all([p.waitForEvent('download'), p.click('[data-act="backup"]')]);
   const path = await dl.path();
+  await p.waitForSelector('.state.ok', { timeout: 3000 });
+  if ((await p.locator('#lecSel option:checked').textContent()).includes('未書き出し')) throw new Error('書き出した後も「未書き出し」のまま');
   await p.click('#settingsBtn');
   await p.setInputFiles('#importIn', path);
   await p.waitForTimeout(800);
