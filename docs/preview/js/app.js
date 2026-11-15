@@ -243,7 +243,7 @@ async function renderAudioIn() {
 
 /* ============================== 画面の共有とスクリーンショット ============================== */
 const Screen = {
-  stream: null, video: null, region: ls('shotRegion'), timer: null, lastShot: null, prev: null,
+  stream: null, video: null, region: ls('shotRegion'), timer: null, shots: [], lastAt: 0, prev: null, still: 0,
   audioTrack() { return this.stream ? this.stream.getAudioTracks().find((t) => t.readyState === 'live') || null : null; },
   async start() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { toast('このブラウザでは画面の共有ができません（Chrome か Edge のパソコン版で使えます）'); return; }
@@ -278,9 +278,9 @@ const Screen = {
     const c = this.frame(1600); if (!c) { toast('画面がまだ映っていません'); return; }
     const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.85));
     const at = Date.now(); const s = sessionAt(at) || openSession();
-    const m = await store.addImage(S.lec.id, { blob, at, sessionId: s ? s.id : '', text: auto ? '（スライドが変わったので自動で撮影）' : '', from: 'screen' });
+    const m = await store.addImage(S.lec.id, { blob, at, sessionId: s ? s.id : '', text: auto ? '（自動で撮影）' : '', from: 'screen' });
     S.memos.push(m); renderFeed(true); markChanged();
-    this.lastShot = this.sig();
+    this.remember(this.sig()); this.lastAt = Date.now();
     if (!auto) toast('📷 撮りました');
   },
   // 範囲の画面を 32×18 の白黒にした「目印」。スライドが変わったかを比べる
@@ -292,19 +292,23 @@ const Screen = {
     for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
     return out;
   },
-  diff(a, b) { if (!a || !b) return 255; let n = 0; for (let i = 0; i < a.length; i++) n += Math.abs(a[i] - b[i]); return n / a.length; },
+  // 変わったマスの割合（0〜1）。マウスの矢印や小さな印は数マスしか変わらない
+  diff(a, b) { if (!a || !b) return 1; let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 24) n++; return n / a.length; },
+  // 最近撮った画面の目印を覚えておく。同じ画面に戻っただけ（再生ボタンが出て消えた等）なら撮らない
+  remember(sig) { if (!sig) return; this.shots = [sig, ...(this.shots || [])].slice(0, 6); },
+  seen(cur) { return (this.shots || []).some((s) => this.diff(cur, s) < 0.2); },
   setAuto(on) {
     clearInterval(this.timer); this.timer = null;
     const cb = $('#autoShot'); if (cb) cb.checked = !!on;
     if (!on) return;
-    this.lastShot = this.lastShot || this.sig(); this.prev = null;
-    // 2秒ごとに見て、前に撮ったときから大きく変わり、しかも止まっている（めくり終わった）ときに撮る
+    if (!(this.shots || []).length) this.remember(this.sig());
+    this.prev = null; this.still = 0;
+    // 2秒ごとに見る。最近撮ったどの画面とも大きく違い、4秒以上止まっていて（めくり終わった）、前に撮ってから10秒たっていれば撮る
     this.timer = setInterval(() => {
       const cur = this.sig(); if (!cur) return;
-      const changed = this.diff(cur, this.lastShot) > 10;
-      const settled = this.prev && this.diff(cur, this.prev) < 2;
+      this.still = this.prev && this.diff(cur, this.prev) < 0.03 ? this.still + 1 : 0;
       this.prev = cur;
-      if (changed && settled) this.shot(true);
+      if (this.still >= 2 && Date.now() - (this.lastAt || 0) >= 10000 && !this.seen(cur)) this.shot(true);
     }, 2000);
   },
 };
@@ -354,7 +358,7 @@ function saveRegion(r) {
   Screen.region = r && r.w > 0.03 && r.h > 0.03 ? r : null;
   ls('shotRegion', Screen.region);
   $('#regionModal').hidden = true;
-  Screen.lastShot = null;
+  Screen.shots = [];
   toast(Screen.region ? 'この範囲を撮ります。「📷 撮る」（Alt+S）で撮影' : '画面全体を撮ります。「📷 撮る」（Alt+S）で撮影');
 }
 
@@ -544,7 +548,7 @@ function renderFeed(scroll) {
   $('#feed').innerHTML = items.map((m) => {
     const tag = TAGS[m.type];
     // 写真は左に寄せ、続くメモの文字が写真の横に回り込むようにする
-    return `<li class="fi ${esc(m.type)}">${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}<span class="tm">${hms(m.at)}</span><span class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.from === 'phone' ? '<span class="from"> 📱</span>' : m.from === 'screen' ? '<span class="from"> 🖥</span>' : m.from === 'import' ? '<span class="from"> （撮影時刻で配置）</span>' : ''}</span><button class="x" type="button" data-del="${esc(m.id)}" title="削除" aria-label="削除">×</button></li>`;
+    return `<li class="fi ${esc(m.type)}${m.imageId ? ' hasimg' : ''}">${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}<span class="tm">${hms(m.at)}</span><span class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.from === 'phone' ? '<span class="from"> 📱</span>' : m.from === 'screen' ? '<span class="from"> 🖥</span>' : m.from === 'import' ? '<span class="from"> （撮影時刻で配置）</span>' : ''}</span><button class="x" type="button" data-del="${esc(m.id)}" title="削除" aria-label="削除">×</button></li>`;
   }).join('');
   document.querySelectorAll('#feed img[data-img]').forEach(async (img) => {
     img.addEventListener('load', () => scrollBottom('#fScroll'), { once: true });   // 写真が読み込まれて高さが変わっても、いちばん下を見せる
