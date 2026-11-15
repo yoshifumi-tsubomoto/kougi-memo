@@ -6,6 +6,7 @@ import { parseTranscript } from './transcript.js';
 
 export const OPENAI_MODELS = ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'];
 export const GEMINI_DEFAULT = 'gemini-2.5-flash';
+export const OPENAI_SUM_DEFAULT = 'gpt-4o-mini';
 
 // 同じ言葉が何回も続いたら、2回までに縮める（「なんか、なんか、なんか、…」）。ほとんどがくり返しなら、その行は捨てる
 function squash(t) {
@@ -73,4 +74,25 @@ export async function seisho(chunks, opts) {
     add(a, Array.isArray(r) ? r : spread(r.text, sec));
   }
   return rows;
+}
+
+/* ---------- 要約：清書と同じ APIキーで、文章を要約させる ---------- */
+export async function summarize(prompt, { engine, key, model }) {
+  if (!key) throw new Error('APIキーが入っていません。⚙ 設定で入れてください');
+  if (engine === 'openai') {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
+    });
+    if (!res.ok) throw new Error(`OpenAI：${res.status} ${(await res.text()).slice(0, 200)}`);
+    const j = await res.json();
+    return String(j.choices?.[0]?.message?.content || '').trim();
+  }
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+  });
+  if (!res.ok) throw new Error(`Gemini：${res.status} ${(await res.text()).slice(0, 200)}`);
+  const j = await res.json();
+  return ((j.candidates || [])[0]?.content?.parts || []).map((p) => p.text || '').join('\n').trim();
 }
