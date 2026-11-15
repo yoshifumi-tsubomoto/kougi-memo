@@ -4,8 +4,9 @@
 //   ・行の頭に時刻があるもの（「06:47 こちらは…」「[1:02:03] …」）
 //   ・Zoom・Teams などの字幕ファイル（.vtt / .srt）
 //   ・時刻のない、ただの文章
-// 返すもの：{ items: [{ sec, text }], timed }  sec は動画の始まりからの秒
-// order：時刻が文の 'before'（前）/'after'（後）にあるか。'auto' は最初の行で決める
+// 返すもの：{ items: [{ sec, text }], timed, dropped }  sec は動画の始まりからの秒
+// 途中から選んでコピーしたとき、時刻のない切れはし（最初または最後）は dropped に数えて省く
+// order：時刻が文の 'before'（前）/'after'（後）にあるか。'auto' は最初と最後の行で決める
 
 const TIME = String.raw`(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?:[.,]\d{1,3})?`;
 const ONLY_TIME = new RegExp(String.raw`^[\[(（]?${TIME}[\])）]?$`);
@@ -29,18 +30,20 @@ export function parseTranscript(raw, order = 'auto') {
 
   // 時刻だけの行がある：時刻の行と文の行が交互に並んでいる
   if (nTime >= 2 || (nTime === 1 && lines.length > 1)) {
-    const timeFirst = order === 'before' || (order === 'auto' && !!isTime[0]);
+    // 自動：最初の行が時刻なら「前」、最後の行が時刻なら「後」。どちらでもなければ「前」とみなす
+    const timeFirst = order === 'before' || (order === 'auto' && (!!isTime[0] || !isTime[lines.length - 1]));
     const items = [];
     let buf = [], cur = null;
     const flush = (sec) => { const t = joinAll(buf); if (t) items.push({ sec, text: t }); buf = []; };
+    let dropped = 0;
     lines.forEach((l, i) => {
       const m = isTime[i];
       if (timeFirst) {
-        if (m) { if (cur !== null) flush(cur); cur = toSec(m); } else buf.push(l);
+        if (m) { if (cur !== null) flush(cur); else if (buf.length) { dropped++; buf = []; } cur = toSec(m); } else buf.push(l);
       } else if (m) { flush(toSec(m)); cur = toSec(m); } else buf.push(l);
     });
-    if (buf.length) flush(cur ?? 0);
-    return { items, timed: true };
+    if (buf.length) { if (timeFirst) flush(cur); else { dropped++; buf = []; } }
+    return { items, timed: true, dropped };
   }
 
   // 行の頭に時刻がある

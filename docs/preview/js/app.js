@@ -340,42 +340,68 @@ function pasteBaseAt() {
   if (v) { const [h, m, x] = v.split(':').map(Number); d.setHours(h, m, x || 0, 0); }
   return d.getTime();
 }
+// 貼り付けた文を、講義の時刻に直す。すでに取り込んだ文と同じ時刻のものは、重なりとして飛ばす（長いほうを残す）
 function pastePlan() {
-  const { items, timed } = parseTranscript($('#pasteText').value, $('#pasteOrder').value);
-  const base = pasteBaseAt(), sid = $('#pasteSess').value;
+  const { items, timed, dropped = 0 } = parseTranscript($('#pasteText').value, $('#pasteOrder').value);
+  const base = pasteBaseAt(), sid = $('#pasteSess').value, replace = $('#pasteReplace').checked;
+  const have = new Map();
+  for (const t of S.transcript) if (t.source === 'import' && !(replace && t.sessionId === sid)) have.set(Math.round(t.at / 1000), t);
+  const add = [], update = []; let same = 0;
   // 時刻がないものは、1行ごとに1秒ずつずらして順番を保つ
-  const rows = items.map((it, i) => { const at = base + (timed ? it.sec : i) * 1000; const s = sessionAt(at); return { at, text: it.text, sessionId: s ? s.id : sid }; });
-  return { rows, timed };
+  items.forEach((it, i) => {
+    const at = base + (timed ? it.sec : i) * 1000, k = Math.round(at / 1000);
+    const old = have.get(k);
+    if (old) { if (it.text.length > old.text.length) update.push({ row: old, text: it.text }); else same++; return; }
+    const s = sessionAt(at); const row = { at, text: it.text, sessionId: s ? s.id : sid };
+    add.push(row); have.set(k, row);
+  });
+  return { add, update, same, dropped, timed, all: items.length };
 }
 function renderPastePreview() {
-  const { rows, timed } = pastePlan(); const el = $('#pastePreview');
+  const p = pastePlan(), el = $('#pastePreview');
   if (!$('#pasteText').value.trim()) { el.innerHTML = ''; return; }
-  if (!rows.length) { el.innerHTML = '読み取れる文がありません'; return; }
-  const head = `<b>${rows.length}行</b>を ${timed ? `<b>${timeStr(rows[0].at)}〜${timeStr(rows[rows.length - 1].at)}</b> に並べます` : '時刻なしで、動画の 0:00 の時刻から順に並べます'}`;
-  el.innerHTML = head + rows.slice(0, 4).map((r) => `<div><span class="tm">${timeStr(r.at)}</span>${esc(r.text.slice(0, 80))}</div>`).join('') + (rows.length > 4 ? '<div>…</div>' : '');
+  if (!p.all) { el.innerHTML = '読み取れる文がありません'; return; }
+  const rows = p.add;
+  const extra = [p.same && `取り込み済みの${p.same}行は飛ばします`, p.update.length && `${p.update.length}行は長いほうに置きかえます`, p.dropped && `最初か最後の、途中で切れた文（時刻なし）を省きます`].filter(Boolean).join('。');
+  const head = rows.length
+    ? `<b>${rows.length}行</b>を ${p.timed ? `<b>${timeStr(rows[0].at)}〜${timeStr(rows[rows.length - 1].at)}</b> に並べます` : '時刻なしで、動画の 0:00 の時刻から順に並べます'}`
+    : '<b>新しい行はありません</b>';
+  el.innerHTML = head + (extra ? `<div>${extra}</div>` : '') + rows.slice(0, 4).map((r) => `<div><span class="tm">${timeStr(r.at)}</span>${esc(r.text.slice(0, 80))}</div>`).join('') + (rows.length > 4 ? '<div>…</div>' : '');
 }
+const savedBase = (sid) => (S.lec.pasteBase || {})[sid];
 function openPaste() {
   if (!S.lec) return;
   const ss = sessions(), cur = openSession() || ss[ss.length - 1];
   $('#pasteSess').innerHTML = ss.length ? ss.map((s) => `<option value="${esc(s.id)}" ${cur && s.id === cur.id ? 'selected' : ''}>${esc(s.name)}（${hm(s.start)}〜）</option>`).join('') : '<option value="">セッション外</option>';
-  $('#pasteBase').value = timeStr(cur ? cur.start : Date.now());
+  $('#pasteBase').value = savedBase($('#pasteSess').value) || timeStr(cur ? cur.start : Date.now());
+  $('#pasteOrder').value = ls('pasteOrder') || 'auto';
+  $('#pasteAuto').checked = !!ls('pasteAuto');
   renderPastePreview();
   $('#pasteModal').hidden = false; $('#pasteText').focus();
 }
-async function doPaste() {
-  const { rows } = pastePlan();
-  if (!rows.length) { toast('取り込む文がありません。トランスクリプトを貼り付けてください'); return; }
+async function doPaste(keepOpen) {
+  const p = pastePlan(), sid = $('#pasteSess').value;
+  if (!p.all) { toast('取り込む文がありません。トランスクリプトを貼り付けてください'); return; }
   try {
-    const r = await store.importTranscript(S.lec.id, rows, $('#pasteReplace').checked ? $('#pasteSess').value : undefined);
-    if (r.removed) { const sid = $('#pasteSess').value; S.transcript = S.transcript.filter((t) => !(t.source === 'import' && t.sessionId === sid)); }
+    const r = await store.importTranscript(S.lec.id, p.add, $('#pasteReplace').checked ? sid : undefined, p.update.map((u) => ({ key: u.row.key, text: u.text })));
+    if (r.removed) S.transcript = S.transcript.filter((t) => !(t.source === 'import' && t.sessionId === sid));
+    p.update.forEach((u) => { u.row.text = u.text; });
     S.transcript.push(...r.rows); S.transcript.sort((a, b) => a.at - b.at);
-    $('#pasteModal').hidden = true; $('#pasteText').value = ''; $('#pasteFile').value = '';
-    renderTranscript(); markChanged(); if (S.tab === 'vSum') renderSummary();
-    toast(`${r.rows.length}行を取り込みました${r.removed ? `（前の${r.removed}行を置きかえ）` : ''}`);
+    // 動画の 0:00 の時刻は、次に貼るときのために覚えておく（続きを貼るとき、毎回合わせなくてよい）
+    S.lec = await store.updateLecture(S.lec.id, { pasteBase: { ...(S.lec.pasteBase || {}), [sid]: $('#pasteBase').value }, changedAt: Date.now() });
+    refreshOption();
+    $('#pasteReplace').checked = false; $('#pasteText').value = ''; $('#pasteFile').value = ''; renderPastePreview();
+    if (!keepOpen) $('#pasteModal').hidden = true; else $('#pasteText').focus();
+    renderTranscript(); if (S.tab === 'vSum') renderSummary();
+    toast(`${r.rows.length}行を取り込みました${p.update.length ? `・${p.update.length}行を直しました` : ''}${p.same ? `（重なり${p.same}行は飛ばしました）` : ''}${r.removed ? `（前の${r.removed}行を置きかえ）` : ''}`);
   } catch (e) { toast('取り込めませんでした：' + errMsg(e)); }
 }
-['#pasteText', '#pasteOrder', '#pasteSess', '#pasteBase'].forEach((id) => $(id).addEventListener('input', renderPastePreview));
-$('#pasteSess').addEventListener('change', () => { const s = sessions().find((x) => x.id === $('#pasteSess').value); if (s) $('#pasteBase').value = timeStr(s.start); renderPastePreview(); });
+['#pasteText', '#pasteOrder', '#pasteBase', '#pasteReplace'].forEach((id) => $(id).addEventListener('input', renderPastePreview));
+$('#pasteReplace').addEventListener('change', renderPastePreview);
+$('#pasteAuto').addEventListener('change', () => ls('pasteAuto', $('#pasteAuto').checked));
+$('#pasteText').addEventListener('paste', () => { if ($('#pasteAuto').checked) setTimeout(() => { if ($('#pasteText').value.trim()) doPaste(true); }, 0); });
+$('#pasteOrder').addEventListener('change', () => { ls('pasteOrder', $('#pasteOrder').value); renderPastePreview(); });
+$('#pasteSess').addEventListener('change', () => { const sid = $('#pasteSess').value, s = sessions().find((x) => x.id === sid); $('#pasteBase').value = savedBase(sid) || (s ? timeStr(s.start) : $('#pasteBase').value); renderPastePreview(); });
 $('#pasteFile').addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; $('#pasteText').value = await f.text(); renderPastePreview(); });
 
 /* 範囲を決める：共有した画面の上をドラッグする */
@@ -982,7 +1008,8 @@ document.addEventListener('click', async (e) => {
     case 'share': Screen.stream ? Screen.stop() : Screen.start(); break;
     case 'shot': Screen.shot(false); break;
     case 'paste': openPaste(); break;
-    case 'paste-ok': doPaste(); break;
+    case 'paste-ok': doPaste(false); break;
+    case 'paste-more': doPaste(true); break;
     case 'region': openRegion(); break;
     case 'region-ok': saveRegion(regionDrag && regionDrag.r); break;
     case 'region-all': saveRegion(null); break;
