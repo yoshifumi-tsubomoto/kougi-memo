@@ -30,31 +30,43 @@ const WORKLET = `class Grab extends AudioWorkletProcessor {
 registerProcessor('kougi-grab', Grab);`;
 
 export class WhisperLive {
-  // onText(text, at)：文字ができたとき。onState({ phase, text })：準備や遅れの様子
+  // onText(text, at)：文字ができたとき。onState({ phase, text, lag, pending, device, problem })：準備や遅れの様子
   constructor({ onText, onState }) {
     this.onText = onText; this.onState = onState;
-    this.worker = null; this.model = ''; this.ready = null; this.device = '';
-    this.queue = []; this.busy = false; this.seq = 0; this.lastText = '';
-    this.ctx = null; this.listening = false;
+    this.worker = null; this.model = ''; this.ready = null; this.device = ''; this.forceWasm = false;
+    this.queue = []; this.busy = null; this.seq = 0; this.lastText = '';
+    this.ctx = null; this.listening = false; this.fails = 0; this.problem = ''; this.lastFeed = 0; this.watch = 0;
   }
 
   // AIを準備する（初回はダウンロード）。同じAIなら2回目からはすぐ終わる
   prepare(model) {
     if (this.ready && this.model === model) return this.ready;
-    if (this.worker) this.worker.terminate();
+    this.kill();
     this.model = model;
-    this.worker = new Worker(new URL('./whisper-worker.js', import.meta.url), { type: 'module' });
+    const w = this.worker = new Worker(new URL('./whisper-worker.js', import.meta.url), { type: 'module' });
     this.ready = new Promise((resolve, reject) => {
-      this.worker.onmessage = ({ data: m }) => {
+      w.onmessage = ({ data: m }) => {
         if (m.type === 'progress') this.onState({ phase: 'loading', text: `AIのデータを準備しています… ${(m.loaded / 1048576).toFixed(0)} / ${(m.total / 1048576).toFixed(0)}MB` });
-        else if (m.type === 'ready') { this.device = m.device; this.worker.onmessage = (e) => this.onWorker(e.data); resolve(m.device); this.pump(); this.report(); }
+        else if (m.type === 'ready') { this.device = m.device; w.onmessage = (e) => this.onWorker(e.data); resolve(m.device); this.pump(); this.report(); }
         else if (m.type === 'error') { this.ready = null; reject(new Error(m.message)); }
       };
-      this.worker.onerror = (e) => { this.ready = null; reject(new Error(e.message || 'AIを準備できませんでした')); };
+      w.onerror = (e) => { if (!this.device) { this.ready = null; reject(new Error(e.message || 'AIを準備できませんでした')); } else this.restart('AIが止まりました：' + (e.message || '')); };
     });
     this.onState({ phase: 'loading', text: 'AIを準備しています…' });
-    this.worker.postMessage({ type: 'load', model });
+    w.postMessage({ type: 'load', model, device: this.forceWasm ? 'wasm' : '' });
     return this.ready;
+  }
+  kill() { if (this.worker) this.worker.terminate(); this.worker = null; this.ready = null; this.device = ''; clearTimeout(this.watch); }
+
+  // AIが動かなくなったら、立ち上げ直す。WebGPU で何度も失敗するときは、ふつうの計算に切り替える
+  restart(why) {
+    this.fails++;
+    this.problem = why;
+    if (this.busy) { this.queue.unshift(this.busy); this.busy = null; }
+    if (this.device === 'webgpu' && this.fails >= 2) this.forceWasm = true;
+    const model = this.model; this.kill();
+    this.prepare(model).catch((e) => { this.problem = 'AIを立ち上げ直せませんでした：' + e.message; this.report(); });
+    this.report();
   }
 
   async start(stream, model) {
@@ -70,12 +82,23 @@ export class WhisperLive {
     const mute = ctx.createGain(); mute.gain.value = 0;
     src.connect(node); node.connect(mute); mute.connect(ctx.destination);   // 音は出さずに、処理だけ回す
     node.port.onmessage = (e) => this.feed(e.data);
-    Object.assign(this, { ctx, src, node, ratio: ctx.sampleRate / RATE, pos: 0, parts: [], n: 0, segAt: 0, frames: [], acc: 0, accN: 0, listening: true });
+    Object.assign(this, { ctx, src, node, track, ratio: ctx.sampleRate / RATE, pos: 0, parts: [], n: 0, segAt: 0, frames: [], acc: 0, accN: 0, listening: true, lastFeed: Date.now() });
+    // 音の処理が止められていないかを見張る（ブラウザが止めることがある）
+    clearInterval(this.guard);
+    this.guard = setInterval(() => {
+      if (!this.listening) return;
+      if (ctx.state !== 'running') ctx.resume().catch(() => {});
+      const quiet = Date.now() - this.lastFeed > 10000;
+      const p = track.readyState !== 'live' ? '音声の入力が切れました。画面の共有をやめていないか確かめてください' : quiet ? '音声が届いていません' : '';
+      if (p) { if (this.problem !== p) { this.problem = p; this.report(); } }
+      else if (this.problem.startsWith('音声')) { this.problem = ''; this.report(); }
+    }, 3000);
   }
 
   // 入ってきた音声を 16kHz にして、ためる
   feed(f32) {
     if (!this.listening) return;
+    this.lastFeed = Date.now();
     const out = new Float32Array(Math.floor((f32.length - this.pos) / this.ratio) + 1);
     let k = 0;
     for (; this.pos < f32.length; this.pos += this.ratio) {
@@ -103,47 +126,58 @@ export class WhisperLive {
     const audio = new Float32Array(this.n); let o = 0;
     for (const p of this.parts) { audio.set(p, o); o += p.length; }
     const loud = this.frames.length ? Math.max(...this.frames) : 0;
-    const seg = { id: ++this.seq, at: this.segAt, sec: this.n / RATE, audio };
+    const seg = { id: ++this.seq, at: this.segAt, sec: this.n / RATE, audio, tries: 0 };
     this.parts = []; this.n = 0; this.frames = [];
-    if (loud < 0.006) return;   // ほとんど無音：AIに渡さない（決まり文句を書いてしまうため）
-    this.queue.push(seg); this.pump();
+    if (loud < 0.004) return;   // ほとんど無音：AIに渡さない（決まり文句を書いてしまうため）
+    this.queue.push(seg); this.pump(); this.report();
   }
 
   pump() {
     if (this.busy || !this.queue.length || !this.worker || !this.device) return;
-    const seg = this.queue.shift(); this.busy = seg;
-    this.worker.postMessage({ type: 'run', id: seg.id, audio: seg.audio }, [seg.audio.buffer]);
+    const seg = this.queue.shift(); this.busy = seg; seg.tries++;
+    const copy = seg.audio.slice();   // 失敗したときにやり直せるよう、元は手元に残す
+    this.worker.postMessage({ type: 'run', id: seg.id, tries: seg.tries, audio: copy }, [copy.buffer]);
+    // 長くかかりすぎたら、AIが止まったとみなして立ち上げ直す
+    clearTimeout(this.watch);
+    this.watch = setTimeout(() => { if (this.busy === seg) this.restart('AIの返事がないので、立ち上げ直しました'); }, Math.max(90000, seg.sec * 10000));
     this.report();
   }
 
   onWorker(m) {
-    const seg = this.busy; this.busy = false;
-    if (m.type === 'text' && seg) {
+    const seg = this.busy;
+    if (!seg || m.id !== seg.id) return;
+    clearTimeout(this.watch); this.busy = null;
+    if (m.type === 'text') {
+      this.fails = 0; if (!this.problem.startsWith('音声')) this.problem = '';
       for (const c of m.chunks) {
         const t = c.text.trim();
         if (!t || NOISE.test(t) || t === this.lastText) continue;
         this.lastText = t;
         this.onText(t, Math.round(seg.at + c.t * 1000));
       }
-    } else if (m.type === 'error') this.onState({ phase: 'error', text: '文字にできない部分がありました：' + m.message });
-    this.pump(); this.report();
+      this.pump(); this.report();
+    } else if (m.type === 'error') {
+      if (seg.tries < 2) this.queue.unshift(seg);   // 1回だけやり直す
+      this.restart('文字にできませんでした：' + m.message);
+    }
   }
 
   // どのくらい遅れているか（まだ文字になっていない音声の秒数）
   lag() { return this.queue.reduce((a, s) => a + s.sec, 0) + (this.busy ? this.busy.sec : 0) + this.n / RATE; }
   pending() { return this.queue.length + (this.busy ? 1 : 0); }
   report() {
-    if (!this.device) return;
+    if (!this.device && !this.problem) return;
     const p = this.pending();
-    this.onState({ phase: this.listening ? 'on' : p ? 'finishing' : 'idle', lag: Math.round(this.lag()), pending: p, device: this.device });
+    this.onState({ phase: this.listening ? 'on' : p ? 'finishing' : 'idle', lag: Math.round(this.lag()), pending: p, device: this.device, problem: this.problem });
   }
 
   stopListening() {
+    clearInterval(this.guard);
     if (!this.listening) return;
     this.listening = false;
     try { this.src.disconnect(); this.node.disconnect(); this.ctx.close(); } catch { /* 閉じている */ }
     this.ctx = null;
   }
   // 聞くのをやめる。ためた分と、待っている分は最後まで文字にする
-  stop() { if (this.listening && this.n / RATE >= 1) this.cut(); this.parts = []; this.n = 0; this.frames = []; this.stopListening(); this.report(); }
+  stop() { if (this.listening && this.n / RATE >= 1) this.cut(); this.parts = []; this.n = 0; this.frames = []; this.stopListening(); if (this.problem.startsWith('音声')) this.problem = ''; this.report(); }
 }
