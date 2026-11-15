@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
 
-export const APP_VERSION = '0.6.1 試験11/15 16:29';
+export const APP_VERSION = '0.6.1 試験40236e3';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
