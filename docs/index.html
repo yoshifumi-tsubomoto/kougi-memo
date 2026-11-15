@@ -72,8 +72,8 @@
     <li>気づいたことはメモに。写真は貼り付け・ドラッグでも追加できます</li>
     <li>終わったら「まとめ・出力」で、セッションごとに要約して書き出し</li>
   </ol>
-  <div><button class="btn primary" type="button" id="newBtn2">＋ 新しい講義</button></div>
-  <p class="note">記録はこのブラウザの中だけに保存されます。インターネットに送られるのは、Chromeの音声認識が使う音声だけです。</p>
+  <div class="sumrow"><button class="btn primary" type="button" id="newBtn2">＋ 新しい講義</button><label class="btn">バックアップを読み込む<input type="file" data-import accept=".json,application/json" hidden></label></div>
+  <p class="note">記録はこのブラウザの中だけに保存されます。インターネットに送られるのは、Chrome（Edge）の音声認識が使う音声と、清書を選んだときの録音だけです。</p>
 </main>
 
 <section class="view" id="vLive">
@@ -116,21 +116,8 @@
     <div class="sumrow"><label class="small">入力の大きさ <input type="range" id="inGain" min="-12" max="18" step="1" value="0" aria-describedby="inGainV"></label><span class="small" id="inGainV">そのまま</span></div>
     <p class="small muted">録音と文字起こしに渡す音を、大きく（小さく）します。セッションの途中でもすぐ効きます。「🎚 音を確かめる」のゲージが、話しているときに緑で半分〜7割になるくらいが目安です。</p>
     <p class="small muted" id="audioInHint" hidden>機器の名前が出ないときは「一覧を更新」を押し、マイクの使用を許可してください。</p>
-    <p class="small muted">Zoom・YouTube などの音を取り込むには、「ステレオミキサー」などPCの音が入る機器か、「画面共有の音声」を選びます。リアルタイム文字起こしにも同じ音を使うには、Chrome のマイクの設定（アドレスバー左のマーク →「サイトの設定」→「マイク」）でも同じ機器を選んでください。</p>
-    <h4>リアルタイム文字起こしの方法</h4>
-    <div class="engines" id="liveEngines"></div>
-    <div id="whisperRow" hidden>
-      <div class="sumrow"><label class="small">AIの大きさ <select id="whisperModel" class="mini-sel"></select></label><button class="btn" type="button" data-act="whisper-prep">AIを準備しておく</button></div>
-      <p class="small muted" id="whisperNote"></p>
-      <p class="small" id="whisperState"></p>
-      <div class="sumrow"><button class="btn" type="button" data-act="diag" title="うまく動かないときに、いまの様子（文字や音声の中身は含みません）をコピーします">🩺 いまの状態をコピー</button></div>
-      <textarea id="diagOut" rows="12" readonly hidden style="width:100%;font-family:var(--f-mono);font-size:12px"></textarea>
-      <p class="small muted">遅れがどんどん増えるときは、小さいAIにしてください。<a href="bench.html" target="_blank" rel="noopener">このPCでの速さを試す</a></p>
-    </div>
-    <h4>このPCのAIのデータ</h4>
-    <p class="small muted">リアルタイムの文字起こしや清書で使うAIのデータです。時間のあるときにダウンロードしておくと、使うときにすぐ始まります。データはこのブラウザにしまわれ、本番と試験版で共通です。ダウンロード中は、このページを閉じないでください。</p>
-    <ul class="models" id="modelList"></ul>
-    <div class="sumrow"><button class="btn" type="button" data-act="dl-all" id="dlAll">まだのものを、まとめてダウンロード</button><span class="small muted">全部で約2GBの空きが必要です</span></div>
+    <p class="small muted">Zoom・YouTube などの音を録音するには、「画面共有の音声」を選びます。リアルタイムの文字起こしは、マイクの音だけを聞きます（共有した音声は、あとで清書するか、字幕を「📋 貼り付け」で取り込みます）。</p>
+    <div id="oldAI" class="sumrow" hidden><span class="small">前の版でダウンロードした「このPCのAI」のデータが残っています。いまは使わないので、消して場所をあけられます。</span><button class="btn" type="button" data-act="old-ai">AIのデータを消す</button></div>
     <h4>アプリとして使う</h4>
     <div class="sumrow" id="installRow"></div>
     <h4>保存の状況</h4>
