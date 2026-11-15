@@ -163,6 +163,19 @@ await step('文字起こしの方法で「このPCのAI」を選ぶと、録音�
   await p.click('[data-act="end"]');
   await p.evaluate(() => { localStorage.removeItem('whisperModel'); localStorage.removeItem('liveEngine'); localStorage.removeItem('inGainDb'); });
 });
+await step('清書（このPCのAI）で録音を文字にし直し、清書が済んだ録音を消せる', async () => {
+  await p.evaluate(() => { localStorage.setItem('engine', JSON.stringify('browser')); localStorage.setItem('hqModel', JSON.stringify('fake')); });
+  await p.click('[data-tab="vSum"]');
+  const btn = p.locator('[data-act="seisho"]').first();
+  await btn.click();
+  await p.waitForSelector('.seisho:has-text("清書済み")', { timeout: 30000 });
+  if (!(await p.textContent('#sumWrap')).includes('文字起こし（清書）')) throw new Error('清書した文字が使われない');
+  p.once('dialog', (d) => d.accept());
+  await p.click('[data-act="delaudio-hq"]');
+  await p.waitForSelector('.seisho:has-text("清書済み")');
+  await p.waitForFunction(() => !document.querySelector('[data-act="delaudio-hq"]'), null, { timeout: 5000 });
+  await p.evaluate(() => { localStorage.removeItem('engine'); localStorage.removeItem('hqModel'); });
+});
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
   await p.waitForSelector('#installModal:not([hidden]) .step.here');
