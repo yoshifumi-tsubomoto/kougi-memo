@@ -3,9 +3,9 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
-import { seisho, OPENAI_MODELS, GEMINI_DEFAULT } from './seisho.js';
+import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.7.2 試験f47f992';
+export const APP_VERSION = '0.8.0 試験29757c0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -837,9 +837,10 @@ function renderSummary() {
       ${seishoRow(s, au)}
       <div class="sumrow">
         <label>要約の文字数 <input type="number" min="50" step="50" value="${sum.chars || 400}" data-chars="${esc(s.id)}"> 字</label>
-        <button class="btn primary" type="button" data-act="prompt" data-sid="${esc(s.id)}">要約用にコピー</button>
+        ${seiEngine() !== 'none' ? `<button class="btn primary" type="button" data-act="autosum" data-sid="${esc(s.id)}">✨ 要約を作る（${ENGINE_NAME[seiEngine()]}）</button>` : ''}
+        <button class="btn ${seiEngine() !== 'none' ? '' : 'primary'}" type="button" data-act="prompt" data-sid="${esc(s.id)}">要約用にコピー</button>
       </div>
-      <p class="note">コピーした文章を、使ってよいAI（学校のGeminiなど）に貼り付けて要約させ、結果を下に貼って保存します。</p>
+      <p class="note">${seiEngine() !== 'none' ? `「✨ 要約を作る」で、清書と同じ ${ENGINE_NAME[seiEngine()]} の APIキーを使って要約を作り、下に保存します。` : ''}「要約用にコピー」で、使ってよいAI（学校のGeminiなど）に貼り付けて要約させることもできます。</p>
       <textarea data-sum="${esc(s.id)}" placeholder="ここに要約を貼り付け（自分で書いてもかまいません）">${esc(sum.text || '')}</textarea>
       <div class="sumrow"><button class="btn" type="button" data-act="savesum" data-sid="${esc(s.id)}">要約を保存</button><span class="small muted">${sum.savedAt ? '保存：' + hm(sum.savedAt) : ''}</span></div>
       ${au.length ? `<details class="audio"><summary>録音を聞く・保存する（${au.length}区切り）</summary><ul class="alist">${au.map((a, i) => `
@@ -870,6 +871,8 @@ function exportNote() {
   if (st === 'never') return '<p class="state warn">⚠ まだ書き出していません。記録はこのブラウザの中だけにあり、サイトのデータを消すと失われます。</p>';
   return '<p class="note">記録はこのブラウザの中だけにあります。終わったら書き出しておいてください。</p>';
 }
+// AIが付けがちな Markdown の記号（**太字**・# 見出し・* 箇条書き）を、読みやすい形に直す
+const cleanSummary = (t) => String(t).replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1').replace(/^#{1,6}\s*/gm, '').replace(/^\s*[*-]\s+/gm, '・').trim();
 function buildPrompt(s, chars) {
   const tx = sessionText(s);
   const memos = S.memos.filter((m) => m.sessionId === s.id && m.type !== 'photo');
@@ -1061,7 +1064,8 @@ function renderEngineOpts() {
   const e = seiEngine(), box = $('#engineOpts');
   if (e === 'openai') box.innerHTML = `<label class="small">OpenAI の APIキー <input type="password" id="openaiKey" autocomplete="off" placeholder="sk-…" value="${esc(ls('openaiKey') || '')}"></label>
     <label class="small">モデル <select id="openaiModel" class="mini-sel">${OPENAI_MODELS.map((m) => `<option ${m === (ls('openaiModel') || 'whisper-1') ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
-    <p class="small muted">whisper-1 は、細かい時刻が付きます。キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。</p>`;
+    <label class="small">要約に使うモデル <input id="openaiSumModel" value="${esc(ls('openaiSumModel') || OPENAI_SUM_DEFAULT)}" style="width:14em"></label>
+    <p class="small muted">文字起こしのモデルの whisper-1 は、細かい時刻が付きます。要約は「まとめ・出力」の「✨ 要約を作る」で作ります。キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。</p>`;
   else if (e === 'gemini') box.innerHTML = `<label class="small">Gemini の APIキー <input type="password" id="geminiKey" autocomplete="off" placeholder="AIza…" value="${esc(ls('geminiKey') || '')}"></label>
     <label class="small">モデル <input id="geminiModel" value="${esc(ls('geminiModel') || GEMINI_DEFAULT)}" style="width:14em"></label>
     <p class="small muted">キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。<b>有料の枠（Google AI Studio で支払いの設定をしたキー）で使ってください。</b>無料の枠では、送った音声が Google の AI の学習に使われることがあります。</p>`;
@@ -1069,7 +1073,7 @@ function renderEngineOpts() {
 }
 document.addEventListener('input', (e) => {
   const id = e.target.id;
-  if (['openaiKey', 'geminiKey', 'geminiModel'].includes(id)) ls(id, e.target.value.trim() || null);
+  if (['openaiKey', 'geminiKey', 'geminiModel', 'openaiSumModel'].includes(id)) ls(id, e.target.value.trim() || null);
 });
 
 /* 前の版で「このPCのAI」を使ったときにダウンロードしたAIのデータが残っていれば、消せるようにする */
@@ -1210,10 +1214,27 @@ document.addEventListener('click', async (e) => {
       toast((await copyText(buildPrompt(s, chars))) ? 'コピーしました。AIに貼り付けてください' : 'コピーできませんでした');
       break;
     }
+    case 'autosum': {
+      const engine = seiEngine(); if (engine === 'none') break;
+      const chars = +document.querySelector(`[data-chars="${sid}"]`).value || 400;
+      const box = document.querySelector(`[data-sum="${sid}"]`);
+      if (box.value.trim() && !confirm('いま欄にある要約を、新しく作った要約に置きかえます。よろしいですか？')) break;
+      if (!confirm(`このセッションの文字起こしとメモを ${ENGINE_NAME[engine]} に送って、要約を作ります。よろしいですか？`)) break;
+      b.disabled = true; const label = b.textContent; b.textContent = '要約を作っています…';
+      try {
+        const opts = engine === 'openai' ? { key: ls('openaiKey'), model: ls('openaiSumModel') || OPENAI_SUM_DEFAULT } : { key: ls('geminiKey'), model: ls('geminiModel') || GEMINI_DEFAULT };
+        const text = cleanSummary(await summarize(buildPrompt(s, chars), { engine, ...opts }));
+        if (!text) throw new Error('要約が返ってきませんでした');
+        box.value = text;
+        await saveLecture({ summaries: { ...(S.lec.summaries || {}), [sid]: { text, chars, savedAt: Date.now(), by: engine } } });
+        await markChanged(); renderSummary(); toast('要約を作って保存しました');
+      } catch (e) { toast('要約を作れませんでした：' + errMsg(e), 8000); b.disabled = false; b.textContent = label; }
+      break;
+    }
     case 'savesum': {
       // AIが付けがちな Markdown の記号（**太字**・# 見出し・* 箇条書き）を、読みやすい形に直す
       const box = document.querySelector(`[data-sum="${sid}"]`);
-      const text = box.value.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1').replace(/^#{1,6}\s*/gm, '').replace(/^\s*[*-]\s+/gm, '・');
+      const text = cleanSummary(box.value);
       box.value = text;
       const chars = +document.querySelector(`[data-chars="${sid}"]`).value || 400;
       await saveLecture({ summaries: { ...(S.lec.summaries || {}), [sid]: { text, chars, savedAt: Date.now() } } });
