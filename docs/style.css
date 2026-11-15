@@ -334,3 +334,6 @@ body.focus .ind .lvl{display:inline-block;width:36px}
 .engine-opts{display:grid;gap:6px;margin-top:6px}
 .engine-opts input[type=password]{width:22em;max-width:100%}
 .sumrow.seisho{border-top:1px dashed var(--line);padding-top:8px}
+.models{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.models li{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:6px 10px;font-size:13px;background:var(--glass-strong)}
+.models .ok{color:var(--teal)}

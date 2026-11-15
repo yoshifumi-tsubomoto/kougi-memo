@@ -148,6 +148,7 @@ await step('文字起こしの方法で「このPCのAI」を選ぶと、録音�
   await p.click('#settingsBtn');
   await p.check('input[name="liveEngine"][value="whisper"]');
   if (!(await p.isVisible('#whisperRow'))) throw new Error('AIの大きさの欄が出ない');
+  await p.waitForSelector('#modelList li[data-mid="Xenova/whisper-small"]');   // AIのデータの一覧が出る
   await p.fill('#inGain', '6'); await p.dispatchEvent('#inGain', 'input');
   if (!(await p.textContent('#inGainV')).includes('+6dB')) throw new Error('入力の大きさが表示されない');
   await p.click('[data-act="level-test"]');

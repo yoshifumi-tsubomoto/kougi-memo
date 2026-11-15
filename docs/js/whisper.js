@@ -35,6 +35,29 @@ export function squash(t) {
   return out.length < t.length * 0.4 && t.length > 40 ? '' : out;
 }
 
+// AIのデータが、このブラウザにしまってあるか（Transformers.js は Cache Storage の 'transformers-cache' にしまう）
+export async function cachedModels() {
+  const have = new Set();
+  try {
+    const c = await caches.open('transformers-cache');
+    for (const req of await c.keys()) for (const m of MODELS) if (req.url.includes(`/${m.id}/`) && /decoder_model_merged/.test(req.url)) have.add(m.id);
+  } catch { /* 使えない */ }
+  return have;
+}
+// AIのデータを、使わずにダウンロードだけしておく（使うときと同じ形式で読み込むので、そのまま使える）
+export function downloadModel(model, onProgress) {
+  return new Promise((resolve, reject) => {
+    const w = new Worker(new URL('./whisper-worker.js', import.meta.url), { type: 'module' });
+    w.onmessage = ({ data: m }) => {
+      if (m.type === 'progress') onProgress(m.loaded, m.total);
+      else if (m.type === 'ready') { w.terminate(); resolve(m.device); }
+      else if (m.type === 'error') { w.terminate(); reject(new Error(m.message)); }
+    };
+    w.onerror = (e) => { w.terminate(); reject(new Error(e.message || 'ダウンロードできませんでした')); };
+    w.postMessage({ type: 'load', model });
+  });
+}
+
 export class WhisperLive {
   // onText(text, at)：文字ができたとき。onState({ phase, text, lag, pending, device, problem })：準備や遅れの様子
   constructor({ onText, onState }) {
