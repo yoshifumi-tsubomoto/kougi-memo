@@ -144,6 +144,19 @@ await step('トランスクリプトを貼り付けて、講義の時刻に直�
   const n = await p.$$eval('#tList .tline.imp', (els) => els.length);
   if (n !== 1) throw new Error('前に取り込んだ文字が置きかわらない（' + n + '行）');
 });
+await step('文字起こしの方法で「このPCのAI」を選ぶと、録音と同じ音声を区切って文字にする', async () => {
+  await p.click('#settingsBtn');
+  await p.check('input[name="liveEngine"][value="whisper"]');
+  if (!(await p.isVisible('#whisperRow'))) throw new Error('AIの大きさの欄が出ない');
+  await p.click('#settings [data-close]');
+  await p.evaluate(() => localStorage.setItem('whisperModel', JSON.stringify('fake')));   // テスト用：AIの代わりに音声の長さを返す
+  await p.click('[data-tab="vLive"]');
+  await p.click('[data-act="start"]');
+  await p.waitForSelector('#tList .tline:has-text("（試験）")', { timeout: 40000 });
+  if (!(await p.textContent('#tSpeech')).includes('PCのAI')) throw new Error('状態の表示がちがう：' + await p.textContent('#tSpeech'));
+  await p.click('[data-act="end"]');
+  await p.evaluate(() => { localStorage.removeItem('whisperModel'); localStorage.removeItem('liveEngine'); });
+});
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
   await p.waitForSelector('#installModal:not([hidden]) .step.here');

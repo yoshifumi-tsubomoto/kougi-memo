@@ -115,6 +115,14 @@
     <div class="sumrow"><select id="audioIn" aria-label="音声の入力"></select><button class="btn" type="button" data-act="audio-refresh">一覧を更新</button></div>
     <p class="small muted" id="audioInHint" hidden>機器の名前が出ないときは「一覧を更新」を押し、マイクの使用を許可してください。</p>
     <p class="small muted">Zoom・YouTube などの音を取り込むには、「ステレオミキサー」などPCの音が入る機器か、「画面共有の音声」を選びます。リアルタイム文字起こしにも同じ音を使うには、Chrome のマイクの設定（アドレスバー左のマーク →「サイトの設定」→「マイク」）でも同じ機器を選んでください。</p>
+    <h4>リアルタイム文字起こしの方法</h4>
+    <div class="engines" id="liveEngines"></div>
+    <div id="whisperRow" hidden>
+      <div class="sumrow"><label class="small">AIの大きさ <select id="whisperModel" class="mini-sel"></select></label><button class="btn" type="button" data-act="whisper-prep">AIを準備しておく</button></div>
+      <p class="small muted" id="whisperNote"></p>
+      <p class="small" id="whisperState"></p>
+      <p class="small muted">遅れがどんどん増えるときは、小さいAIにしてください。<a href="bench.html" target="_blank" rel="noopener">このPCでの速さを試す</a></p>
+    </div>
     <h4>アプリとして使う</h4>
     <div class="sumrow" id="installRow"></div>
     <h4>保存の状況</h4>
