@@ -18,10 +18,8 @@ cpSync(join(tmp, 'docs'), dest, { recursive: true, filter: (src) => !src.include
 rmSync(join(dest, '.nojekyll'), { force: true });
 const rev = execFileSync('git', ['rev-parse', '--short', branch]).toString().trim();
 writeFileSync(join(dest, 'STAGED.txt'), `branch: ${branch}\ncommit: ${rev}\n`);
-// 試験版の版の番号に、作った時刻を付ける（どの試験版を開いているか、画面で分かるように）
-const jst = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map((x) => [x.type, x.value]));
-const stamp = `${jst.month}/${jst.day} ${jst.hour}:${jst.minute}`;   // 日本の時刻
+// 試験版の版の番号に、もとにしたコミットの番号を付ける（どの試験版を開いているか、画面で分かるように）
 const appJs = join(dest, 'js', 'app.js');
-writeFileSync(appJs, readFileSync(appJs, 'utf8').replace(/(APP_VERSION = ')([^']+)(')/, `$1$2 試験${stamp}$3`));
+writeFileSync(appJs, readFileSync(appJs, 'utf8').replace(/(APP_VERSION = ')([^']+)(')/, `$1$2 試験${rev}$3`));
 rmSync(tmp, { recursive: true });
 console.log(`試験版を作りました: ${dest}（${branch} @ ${rev}）`);
