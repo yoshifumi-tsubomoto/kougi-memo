@@ -114,6 +114,21 @@ export async function importTranscript(lectureId, rows, replaceSessionId, update
   });
 }
 
+// あるセッションの、ある種類（清書 'hq' など）の文字起こしを、まるごと入れかえる
+export async function replaceTranscript(lectureId, sessionId, source, rows) {
+  return tx(['transcript'], 'readwrite', async (t) => {
+    const st = t.objectStore('transcript');
+    const old = await done(st.index('lectureId').getAll(lectureId));
+    for (const r of old) if (r.source === source && r.sessionId === sessionId) st.delete(r.key);
+    const out = [];
+    for (const row of rows) {
+      const r = { lectureId, sessionId, at: row.at, text: row.text, source, audioId: row.audioId || '' };
+      r.key = await done(st.add(r)); out.push(r);
+    }
+    return out;
+  });
+}
+
 /* ---------- メモ・写真 ---------- */
 export async function addMemo(lectureId, memo) {
   if (memo.id && !memo.imageId) { const dup = await tx(['memos'], 'readonly', (t) => done(t.objectStore('memos').get(memo.id))); if (dup) return dup; }

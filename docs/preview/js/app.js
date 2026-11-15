@@ -4,8 +4,9 @@ import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
+import { seisho, OPENAI_MODELS, GEMINI_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.6.1 試験ec36fa1';
+export const APP_VERSION = '0.7.0 試験a55af8b';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -29,9 +30,9 @@ function setLook(k) {
 const TAGS = { key: '要点', q: '質問', todo: 'TODO', quote: '引用', photo: '写真' };
 const ENGINES = [
   { k: 'none', label: '① 清書しない（リアルタイムの速報だけ）', note: '設定はいりません', ready: true },
-  { k: 'browser', label: '② このPCの中で清書する', note: '音声を外部に送りません。PCの性能によって時間がかかります（準備中）。<a href="bench.html" target="_blank" rel="noopener">このPCでの速さを試す</a>' },
-  { k: 'openai', label: '③ OpenAI で清書する', note: '自分のAPIキーが必要です（準備中）' },
-  { k: 'gemini', label: '④ Gemini で清書する', note: '自分のAPIキーが必要です（準備中）' },
+  { k: 'browser', label: '② このPCの中で清書する', note: '音声を外部に送りません。PCの性能によって時間がかかります。<a href="bench.html" target="_blank" rel="noopener">このPCでの速さを試す</a>', ready: true },
+  { k: 'openai', label: '③ OpenAI で清書する', note: '自分のAPIキーが必要です（料金がかかります）。録音の音声を OpenAI に送ります', ready: true },
+  { k: 'gemini', label: '④ Gemini で清書する', note: '自分のAPIキーが必要です（無料の枠があります）。録音の音声を Google に送ります', ready: true },
 ];
 
 /* ============================== 状態と小道具 ============================== */
@@ -863,6 +864,7 @@ function renderSummary() {
       <h3><input value="${esc(s.name)}" data-sname="${esc(s.id)}" aria-label="セッション名"><small>${hm(s.start)}〜${s.end ? hm(s.end) : '記録中'}（${dur(((s.end || Date.now()) - s.start) / 1000)}）</small></h3>
       <div class="stats"><span>文字起こし（${tx.kind}）<b>${chars.toLocaleString()}</b>字</span><span>メモ <b>${nm.filter((m) => m.type !== 'photo').length}</b></span>
         <span>写真 <b>${nm.filter((m) => m.type === 'photo').length}</b></span><span>録音 <b>${au.length}</b>区切り</span></div>
+      ${seishoRow(s, au)}
       <div class="sumrow">
         <label>要約の文字数 <input type="number" min="50" step="50" value="${sum.chars || 400}" data-chars="${esc(s.id)}"> 字</label>
         <button class="btn primary" type="button" data-act="prompt" data-sid="${esc(s.id)}">要約用にコピー</button>
@@ -877,6 +879,18 @@ function renderSummary() {
     </div>`;
   }
   $('#sumWrap').innerHTML = html;
+}
+function seishoRow(s, au) {
+  const hq = (S.lec.hq || {})[s.id], has = S.transcript.some((t) => t.source === 'hq' && t.sessionId === s.id);
+  const engine = ls('engine') || 'none';
+  if (SEI && SEI.sid === s.id) return `<div class="sumrow seisho"><span class="small" data-seistate="${esc(s.id)}">${esc(SEI.state)}</span><button class="btn ghost" type="button" data-act="seisho-stop">やめる</button></div>`;
+  if (!s.end) return '';
+  const how = engine === 'none' ? '' : `（${ENGINE_NAME[engine]}）`;
+  return `<div class="sumrow seisho">
+    ${au.length ? `<button class="btn" type="button" data-act="seisho" data-sid="${esc(s.id)}">✨ ${has ? '清書をやり直す' : '清書する'}${how}</button>` : ''}
+    ${has ? `<span class="small">✓ 清書済み${hq ? `（${new Date(hq.at).toLocaleDateString('ja-JP')} ${hm(hq.at)}・${ENGINE_NAME[hq.engine] || ''}）` : ''}</span>` : au.length ? '<span class="small muted">録音を、ていねいに文字にし直します</span>' : ''}
+    ${has && au.length ? `<span class="sp"></span><button class="btn ghost danger" type="button" data-act="delaudio-hq" data-sid="${esc(s.id)}">清書が済んだ録音を消す（${mb(au.reduce((n, a) => n + (a.bytes || 0), 0))}）</button>` : ''}
+  </div>`;
 }
 function exportNote() {
   const st = exportState(S.lec);
@@ -1074,8 +1088,72 @@ async function openSettings() {
   $('#whisperModel').innerHTML = W_MODELS.map((m) => `<option value="${m.id}" ${m.id === wm ? 'selected' : ''}>${m.label}　${m.size}</option>`).join('');
   $('#whisperNote').textContent = (W_MODELS.find((m) => m.id === wm) || {}).note || '';
   $('#engines').innerHTML = ENGINES.map((e) => `<label class="${e.ready ? '' : 'off'}"><input type="radio" name="engine" value="${e.k}" ${cur === e.k ? 'checked' : ''} ${e.ready ? '' : 'disabled'}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
+  renderEngineOpts();
   $('#version').textContent = `版：${APP_VERSION}`;
   $('#settings').hidden = false;
+}
+
+/* 清書の方法ごとの設定（AIの大きさ・APIキー） */
+const hqModel = () => ls('hqModel') || (navigator.gpu ? 'onnx-community/whisper-large-v3-turbo' : 'Xenova/whisper-small');
+function renderEngineOpts() {
+  const e = ls('engine') || 'none', box = $('#engineOpts');
+  if (e === 'browser') box.innerHTML = `<label class="small">清書に使うAIの大きさ <select id="hqModel" class="mini-sel">${W_MODELS.map((m) => `<option value="${m.id}" ${m.id === hqModel() ? 'selected' : ''}>${m.label}　${m.size}</option>`).join('')}</select></label>
+    <p class="small muted">清書はあとから時間をかけてできるので、リアルタイムより大きいAIがおすすめです。</p>`;
+  else if (e === 'openai') box.innerHTML = `<label class="small">OpenAI の APIキー <input type="password" id="openaiKey" autocomplete="off" placeholder="sk-…" value="${esc(ls('openaiKey') || '')}"></label>
+    <label class="small">モデル <select id="openaiModel" class="mini-sel">${OPENAI_MODELS.map((m) => `<option ${m === (ls('openaiModel') || 'whisper-1') ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+    <p class="small muted">whisper-1 は、細かい時刻が付きます。キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。</p>`;
+  else if (e === 'gemini') box.innerHTML = `<label class="small">Gemini の APIキー <input type="password" id="geminiKey" autocomplete="off" placeholder="AIza…" value="${esc(ls('geminiKey') || '')}"></label>
+    <label class="small">モデル <input id="geminiModel" value="${esc(ls('geminiModel') || GEMINI_DEFAULT)}" style="width:14em"></label>
+    <p class="small muted">キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。無料の枠では、送った音声が Google のサービス改善に使われることがあります。</p>`;
+  else box.innerHTML = '';
+}
+document.addEventListener('input', (e) => {
+  const id = e.target.id;
+  if (['openaiKey', 'geminiKey', 'geminiModel'].includes(id)) ls(id, e.target.value.trim() || null);
+});
+
+/* 清書を実行する（一度に1つのセッション） */
+let SEI = null;   // { sid, ctrl, state }
+const ENGINE_NAME = { browser: 'このPCのAI', openai: 'OpenAI', gemini: 'Gemini' };
+async function runSeisho(sid) {
+  if (SEI) { toast('ほかのセッションを清書しています。終わってから押してください'); return; }
+  const engine = ls('engine') || 'none';
+  if (engine === 'none') { toast('先に ⚙ 設定の「清書の方法」で、清書のしかたを選んでください', 5000); openSettings(); return; }
+  const s = sessions().find((x) => x.id === sid); if (!s) return;
+  const au = S.audio.filter((a) => a.sessionId === sid && a.status !== 'deleted' && a.bytes > 0).sort((a, b) => a.startAt - b.startAt);
+  if (!au.length) { toast('このセッションには録音がありません'); return; }
+  if (engine !== 'browser' && !confirm(`${ENGINE_NAME[engine]} に、このセッションの録音（${mb(au.reduce((n, a) => n + a.bytes, 0))}）を送って清書します。よろしいですか？`)) return;
+  const opts = engine === 'browser' ? { model: hqModel() }
+    : engine === 'openai' ? { key: ls('openaiKey'), model: ls('openaiModel') || 'whisper-1' }
+      : { key: ls('geminiKey'), model: ls('geminiModel') || GEMINI_DEFAULT };
+  SEI = { sid, ctrl: new AbortController(), state: '準備しています…' };
+  const show = (t) => { SEI.state = t; const el = document.querySelector(`[data-seistate="${sid}"]`); if (el) el.textContent = t; };
+  renderSummary(); keepAwake();
+  try {
+    const rows = await seisho(au.map((a) => ({ id: a.id, startAt: a.startAt, endAt: a.endAt, blob: () => store.getAudioBlob(a.id) })),
+      { engine, ...opts, signal: SEI.ctrl.signal, onState: show });
+    if (!rows.length) throw new Error('文字にできる声がありませんでした');
+    const saved = await store.replaceTranscript(S.lec.id, sid, 'hq', rows.map((r) => ({ ...r, sessionId: sid })));
+    S.transcript = S.transcript.filter((t) => !(t.source === 'hq' && t.sessionId === sid)).concat(saved).sort((a, b) => a.at - b.at);
+    S.lec = await store.updateLecture(S.lec.id, { hq: { ...(S.lec.hq || {}), [sid]: { at: Date.now(), engine, model: opts.model } }, changedAt: Date.now() });
+    refreshOption();
+    toast(`「${s.name}」を清書しました（${saved.length}行）`, 4000);
+  } catch (e) {
+    toast(e.name === 'AbortError' ? '清書をやめました' : '清書できませんでした：' + errMsg(e), 8000);
+  } finally {
+    SEI = null; if (!recording()) releaseWake(); renderSummary();
+  }
+}
+// 清書が済んだセッションの録音を消す（場所をあける）
+async function deleteHqAudio(sid) {
+  const au = S.audio.filter((a) => a.sessionId === sid && a.status !== 'deleted');
+  const size = au.reduce((n, a) => n + (a.bytes || 0), 0);
+  if (!au.length) return;
+  if (!confirm(`このセッションの録音（${au.length}区切り・${mb(size)}）を消します。消した録音は元に戻せません。\n清書した文字・メモ・写真は残ります。よろしいですか？`)) return;
+  for (const a of au) await store.deleteAudio(a.id);
+  const d = await store.getLecture(S.lec.id); S.audio = d.audio;
+  await markChanged(); renderSummary();
+  toast(`録音を消しました（${mb(size)} あきました）`);
 }
 
 /* ============================== 画面を消さない・閉じるときの確認 ============================== */
@@ -1083,7 +1161,7 @@ let wake = null;
 async function keepAwake() { try { if (navigator.wakeLock && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => (wake = null)); } } catch { /* 使えない環境 */ } }
 function releaseWake() { try { wake && wake.release(); } catch { /* 済み */ } wake = null; }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && recording()) keepAwake(); });
-window.addEventListener('beforeunload', (e) => { if (recording()) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', (e) => { if (recording() || SEI) { e.preventDefault(); e.returnValue = ''; } });
 
 /* ============================== 操作 ============================== */
 $('#newBtn').addEventListener('click', newLecture);
@@ -1114,7 +1192,8 @@ document.addEventListener('drop', (e) => { e.preventDefault(); dragN = 0; $('#dr
 
 document.addEventListener('change', async (e) => {
   if (e.target.id === 'importIn' && e.target.files[0]) { $('#settings').hidden = true; importFile(e.target.files[0]); e.target.value = ''; return; }
-  if (e.target.name === 'engine') { ls('engine', e.target.value); return; }
+  if (e.target.name === 'engine') { ls('engine', e.target.value); renderEngineOpts(); if (S.tab === 'vSum') renderSummary(); return; }
+  if (e.target.id === 'hqModel' || e.target.id === 'openaiModel') { ls(e.target.id, e.target.value); return; }
   if (e.target.name === 'liveEngine') { ls('liveEngine', e.target.value); $('#whisperRow').hidden = e.target.value !== 'whisper'; toast(recording() ? '次にセッションを始めるときから、この方法を使います' : 'この方法で文字起こしします'); renderTranscript(); return; }
   if (e.target.id === 'whisperModel') { ls('whisperModel', e.target.value); $('#whisperNote').textContent = (W_MODELS.find((m) => m.id === e.target.value) || {}).note || ''; return; }
   if (e.target.name === 'look') { setLook(e.target.value); return; }
@@ -1148,6 +1227,9 @@ document.addEventListener('click', async (e) => {
     case 'resume': await Rec.start(); Live.start(); keepAwake(); renderCtrl(); break;
     case 'next': nextSession(); break;
     case 'end': endSession(); break;
+    case 'seisho': runSeisho(sid); break;
+    case 'seisho-stop': if (SEI) SEI.ctrl.abort(); break;
+    case 'delaudio-hq': deleteHqAudio(sid); break;
     case 'prompt': {
       const chars = +document.querySelector(`[data-chars="${sid}"]`).value || 400;
       toast((await copyText(buildPrompt(s, chars))) ? 'コピーしました。AIに貼り付けてください' : 'コピーできませんでした');

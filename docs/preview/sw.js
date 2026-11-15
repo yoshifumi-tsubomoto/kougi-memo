@@ -1,9 +1,9 @@
 // 講義メモ：アプリ一式をブラウザにしまっておき、ネットがなくても開けるようにする。
 // 新しい版が届いても、利用者が「更新する」を押すまでは切り替えない。
-const VERSION = '0.6.1';
+const VERSION = '0.7.0';
 const CACHE = 'kougi-memo-' + VERSION;
 const FONT_CACHE = 'kougi-memo-fonts';
-const FILES = ['./', 'index.html', 'style.css', 'js/app.js', 'js/store.js', 'js/media.js', 'js/link.js', 'js/transcript.js', 'js/whisper.js', 'js/whisper-worker.js', 'js/phone.js', 'phone.html', 'bench.html', 'js/bench.js', 'vendor/peerjs.min.js', 'vendor/qrcode.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
+const FILES = ['./', 'index.html', 'style.css', 'js/app.js', 'js/store.js', 'js/media.js', 'js/link.js', 'js/transcript.js', 'js/whisper.js', 'js/whisper-worker.js', 'js/seisho.js', 'js/phone.js', 'phone.html', 'bench.html', 'js/bench.js', 'vendor/peerjs.min.js', 'vendor/qrcode.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
