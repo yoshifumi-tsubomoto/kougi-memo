@@ -312,7 +312,8 @@ function renderShare() {
   const on = !!Screen.stream;
   $('#shareBar').hidden = !on;
   $('#shareBtn').classList.toggle('primary', on);
-  $('#shareBtn').title = on ? '画面を共有中' : '画面を共有して、スライドを撮る';
+  $('#shareBtn').title = on ? '画面を共有中（押すと共有をやめる）' : 'ZoomやYouTubeの画面を共有して、スライドを撮る';
+  $('#shareBtn').textContent = on ? '🖥 共有中' : '🖥 画面を撮る';
   if (on) $('#shareAudio').textContent = Screen.audioTrack() ? '音声も共有中' : '音声なし';
 }
 /* 範囲を決める：共有した画面の上をドラッグする */
