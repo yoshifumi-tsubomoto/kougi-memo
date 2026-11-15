@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
 
-export const APP_VERSION = '0.6.0';
+export const APP_VERSION = '0.6.1';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -1257,7 +1257,7 @@ if (navigator.locks) {
 
 /* ============================== 試験版の表示 ============================== */
 if (store.PREVIEW) {
-  document.body.insertAdjacentHTML('afterbegin', '<div class="update preview-bar">試験版です。公開前の新しい機能を試すためのもので、記録は本番とは別に保存されます（本番の記録は見えません・変わりません）。</div>');
+  document.body.insertAdjacentHTML('afterbegin', `<div class="update preview-bar">試験版です（版 ${APP_VERSION}）。公開前の新しい機能を試すためのもので、記録は本番とは別に保存されます（本番の記録は見えません・変わりません）。</div>`);
   document.title = '【試験版】' + document.title;
 }
 
