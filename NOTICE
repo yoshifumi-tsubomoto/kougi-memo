@@ -9,3 +9,7 @@ https://github.com/yoshifumi-tsubomoto/kougi-memo
 このソフトウェアには、次の部品を含みます（どちらも MIT License）。
 - PeerJS 1.5.4（docs/vendor/peerjs.min.js）Copyright (c) 2015 Michelle Bu and Eric Zhang  https://peerjs.com/
 - QR Code Generator for JavaScript 1.4.4（docs/vendor/qrcode.js）Copyright (c) 2009 Kazuhiko Arase
+
+次のものは同梱せず、使うときにインターネットから読み込みます。
+- Transformers.js 4.3.1（Apache License 2.0）Hugging Face  https://github.com/huggingface/transformers.js
+- Whisper の AI データ（MIT License）OpenAI。Hugging Face で公開されている変換版（Xenova/whisper-*、onnx-community/whisper-large-v3-turbo）を使います
