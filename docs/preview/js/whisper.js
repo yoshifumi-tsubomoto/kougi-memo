@@ -15,7 +15,7 @@ export const defaultModel = () => (navigator.gpu ? 'Xenova/whisper-small' : 'Xen
 const RATE = 16000;
 const MIN_SEG = 10, MAX_SEG = 28, FRAME = RATE / 10;   // 区切りの長さ（秒）と、音の大きさを測る単位（0.1秒）
 // 無音のときに Whisper が書きがちな決まり文句。これだけの行は捨てる
-const NOISE = /^[\s、。.!！?？…「」]*(ご視聴ありがとうございました|ご清聴ありがとうございました|ありがとうございました|チャンネル登録.*|字幕.*|おやすみなさい|はい|うん)[\s、。.!！?？…」]*$/;
+const NOISE = /^[\s、。.!！?？…「」]*(ご(視聴|清聴)ありがとうございま(した|す)|ありがとうございま(した|す)|最後までご(覧|視聴)いただきありがとうございま(した|す)|チャンネル登録.*|字幕.*|おやすみなさい|はい|うん)[\s、。.!！?？…」]*$/;
 
 const WORKLET = `class Grab extends AudioWorkletProcessor {
   constructor() { super(); this.buf = new Float32Array(4096); this.n = 0; }
