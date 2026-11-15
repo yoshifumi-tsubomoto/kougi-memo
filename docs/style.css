@@ -329,3 +329,5 @@ body.focus .ind .lvl{display:inline-block;width:36px}
 
 /* 窓がせまいとき、広く表示の帯を1行に収める */
 @media (max-width:1100px){body.focus #sName,body.focus #sTot{display:none!important}body.focus #lecSel{max-width:150px}}
+#inGain{width:180px;vertical-align:middle}
+#lvl{cursor:pointer}
