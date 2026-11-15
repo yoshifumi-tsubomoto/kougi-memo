@@ -513,7 +513,7 @@ const tlineHtml = (t) => `<div class="tline"><span class="tm">${hms(t.at)}</span
 function renderTranscript() {
   const list = $('#tList');
   const live = S.transcript.filter((t) => t.source !== 'hq');
-  if (!live.length) { list.innerHTML = `<p class="empty">${openSession() ? '話し声を待っています…' : '「セッション開始」を押すと、ここに文字起こしが流れます。'}</p>`; list.dataset.last = ''; return; }
+  if (!live.length) { list.innerHTML = `<p class="empty">${openSession() ? '話し声を待っています…' + (audioSourceId() ? '<br><small>音声の入力を「マイク以外」にしています。録音はその音声で行いますが、ブラウザによっては文字起こしがマイクの音しか聞けません（Edge では共有した音声を聞けないことがあります）。文字が流れないときは Chrome で試すか、あとで清書（②）で文字にします。</small>' : '') : '「セッション開始」を押すと、ここに文字起こしが流れます。'}</p>`; list.dataset.last = ''; return; }
   const names = Object.fromEntries(sessions().map((s) => [s.id, s.name]));
   let html = '', last = null;
   for (const t of live) {
