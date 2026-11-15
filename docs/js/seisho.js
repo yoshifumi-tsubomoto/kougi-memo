@@ -134,7 +134,7 @@ export async function seisho(chunks, opts) {
           stop();
           const pct = Math.round((done / total) * 100), el = (performance.now() - t0) / 1000;
           const left = done > 0 ? Math.round((el / done) * (total - done) / 60) : null;
-          onState(`清書しています… ${pct}%${left !== null ? `（あと約${Math.max(1, left)}分）` : ''}・${device === 'webgpu' ? 'WebGPU' : 'ふつうの計算'}`);
+          onState(`清書しています… ${pct}%${left !== null ? `（あと約${Math.max(1, left)}分）` : `（録音 ${Math.round(total / 60)}分ぶん。最初の区切りが終わると、残り時間が出ます）`}・${device === 'webgpu' ? 'WebGPU' : 'ふつうの計算'}`);
           const out = await ai.run(p.audio);
           add(a, out.map((c) => ({ t: p.off + c.t, text: c.text })));
           done += p.audio.length / RATE;

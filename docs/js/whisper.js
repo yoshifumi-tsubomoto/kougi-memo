@@ -8,7 +8,7 @@ export const MODELS = [
   { id: 'Xenova/whisper-tiny', label: 'とても小さい（tiny）', size: '約40MB', note: 'いちばん速い。日本語の精度は低め' },
   { id: 'Xenova/whisper-base', label: '小さい（base）', size: '約80MB', note: '速い。精度はそこそこ' },
   { id: 'Xenova/whisper-small', label: '中くらい（small）', size: '約250MB', note: '速さと精度のつりあいがよい（WebGPU が使えるPC向け）' },
-  { id: 'onnx-community/whisper-large-v3-turbo', label: '大きい（large-v3-turbo）', size: '約600MB〜', note: 'いちばん高精度。速いPC向け' },
+  { id: 'onnx-community/whisper-large-v3-turbo', label: '大きい（large-v3-turbo）', size: '約0.6〜1.4GB', note: 'いちばん高精度。WebGPU が使える速いPC向け。初回のダウンロードに時間がかかります' },
 ];
 export const defaultModel = () => (navigator.gpu ? 'Xenova/whisper-small' : 'Xenova/whisper-base');
 

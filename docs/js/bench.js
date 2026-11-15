@@ -8,7 +8,7 @@ const MODELS = [
   { id: 'Xenova/whisper-tiny', label: 'とても小さい（tiny）', size: '約40MB', note: 'いちばん速い。日本語の精度は低め' },
   { id: 'Xenova/whisper-base', label: '小さい（base）', size: '約80MB', note: '速い。精度はそこそこ' },
   { id: 'Xenova/whisper-small', label: '中くらい（small）', size: '約250MB', note: '速さと精度のつりあいがよい（おすすめ）', def: true },
-  { id: 'onnx-community/whisper-large-v3-turbo', label: '大きい（large-v3-turbo）', size: '約600MB〜', note: 'いちばん高精度。WebGPU が使えるPC向け' },
+  { id: 'onnx-community/whisper-large-v3-turbo', label: '大きい（large-v3-turbo）', size: '約0.6〜1.4GB', note: 'いちばん高精度。WebGPU が使えるPC向け' },
 ];
 
 const $ = (s) => document.querySelector(s);
@@ -81,7 +81,9 @@ $('#run').addEventListener('click', async () => {
     $('#state').textContent = '文字起こしAIを準備しています…';
     const T = await import(TF_URL);
     const device = hasGPU ? 'webgpu' : 'wasm';
-    const dtype = hasGPU ? { encoder_model: 'fp32', decoder_model_merged: 'q4' } : 'q8';
+    let f16 = false; try { const ad = hasGPU && await navigator.gpu.requestAdapter(); f16 = !!ad && ad.features.has('shader-f16'); } catch { /* 使えない */ }
+    const large = /large/.test(model.id);
+    const dtype = hasGPU ? { encoder_model: large ? (f16 ? 'fp16' : 'q4') : 'fp32', decoder_model_merged: 'q4' } : 'q8';
     const t0 = performance.now();
     const files = {};
     const asr = await T.pipeline('automatic-speech-recognition', model.id, {
