@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
 
-export const APP_VERSION = '0.6.0';
+export const APP_VERSION = '0.6.1';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -182,6 +182,7 @@ function whisper() {
       if (st.phase === 'loading') { setInd('Speech', 'warn', st.text); showInterim(st.text); return; }
       if (st.phase === 'error') { setInd('Speech', 'warn', st.text); toast(st.text, 6000); return; }
       const lag = st.lag > 3 ? `・遅れ ${st.lag}秒` : '';
+      if (st.problem) { setInd('Speech', 'warn', `文字起こし（PCのAI）${st.problem}`); showInterim(`⚠ ${st.problem}${lag ? `（${st.lag}秒分が待っています）` : ''}`); return; }
       if (st.phase === 'on') setInd('Speech', 'on', `文字起こし（PCのAI）稼働中${lag}`);
       else if (st.phase === 'finishing') setInd('Speech', 'warn', `文字起こし（PCのAI）残りを文字にしています${lag}`);
       else setInd('Speech', '', '文字起こし（PCのAI）停止');
@@ -192,7 +193,7 @@ function whisper() {
 }
 async function startWhisper() {
   if (!Rec.stream) { setInd('Speech', 'warn', '文字起こし（PCのAI）音声の入力がありません'); return; }
-  try { await whisper().start(Rec.stream, whisperModel()); }
+  try { await whisper().start(Rec.stream, whisperModel(), Gain.raw && Gain.raw.getAudioTracks()[0]); }
   catch (e) { setInd('Speech', 'warn', '文字起こし（PCのAI）を始められません：' + errMsg(e)); }
 }
 
@@ -202,13 +203,16 @@ const Rec = {
   active: false, stream: null, mr: null, timer: null, mime: '', count: 0,
   async start() {
     if (!window.MediaRecorder) { setInd('Rec', 'warn', '録音 未対応'); return; }
-    this.stream = await openAudioSource();
-    if (!this.stream) { setInd('Rec', 'warn', '録音 マイクが使えません'); return; }
+    const raw = await openAudioSource();
+    if (!raw) { setInd('Rec', 'warn', '録音 マイクが使えません'); return; }
+    this.stream = Gain.wrap(raw);   // 「入力の大きさ」をかけた音を、録音と文字起こしに使う
     this.mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
     this.active = true; this.begin();
+    recMeter.start(this.stream, $('#lvl'));
   },
   async begin() {
     const s = openSession(); if (!s || !this.stream) return;
+    if (!Gain.alive()) { setInd('Rec', 'warn', '録音 音声の入力が切れています'); clearTimeout(this.timer); this.timer = setTimeout(() => this.rotate(), 5000); return; }
     const mr = new MediaRecorder(this.stream, this.mime ? { mimeType: this.mime, audioBitsPerSecond: 32000 } : {});
     const chunk = await store.startAudio({ lectureId: S.lec.id, sessionId: s.id, startAt: Date.now(), mime: mr.mimeType || this.mime });
     S.audio.push(chunk);
@@ -232,9 +236,102 @@ const Rec = {
     this.active = false; clearTimeout(this.timer);
     if (this.mr && this.mr.state !== 'inactive') this.mr.stop();
     if (this.stream) { this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
-    this.count = 0; setInd('Rec', '', '録音 停止');
+    Gain.close();
+    this.count = 0; setInd('Rec', '', '録音 停止'); recMeter.stop();
   },
 };
+
+/* ============================== 入力の大きさ ==============================
+ * 入ってくる音を、⚙ 設定の「入力の大きさ」の分だけ大きく（小さく）してから、録音と文字起こしに渡す。記録中でもすぐ効く */
+const gainDb = () => { const v = +ls('inGainDb'); return Number.isFinite(v) ? v : 0; };
+const dbLabel = (db) => (db === 0 ? 'そのまま' : `${db > 0 ? '+' : ''}${db}dB（${Math.pow(10, db / 20).toFixed(db > 0 ? 1 : 2)}倍）`);
+const Gain = {
+  ctx: null, node: null, raw: null,
+  wrap(raw) {
+    this.close();
+    this.raw = raw;
+    const ctx = this.ctx = new AudioContext();
+    ctx.resume().catch(() => {});
+    const g = this.node = ctx.createGain(); g.gain.value = Math.pow(10, gainDb() / 20);
+    const dst = ctx.createMediaStreamDestination();
+    ctx.createMediaStreamSource(raw).connect(g).connect(dst);
+    return dst.stream;
+  },
+  set(db) { if (this.node) this.node.gain.setTargetAtTime(Math.pow(10, db / 20), this.ctx.currentTime, 0.05); },
+  alive() { return !!this.raw && this.raw.getAudioTracks().some((t) => t.readyState === 'live'); },
+  close() {
+    try { this.ctx && this.ctx.close(); } catch { /* 閉じている */ }
+    if (this.raw) this.raw.getTracks().forEach((t) => t.stop());
+    this.ctx = null; this.node = null; this.raw = null;
+  },
+};
+
+/* ============================== 音の大きさのゲージ ==============================
+ * 入ってくる音の大きさを、動く棒で見せる。小さすぎると文字起こしが聞き取れない */
+function meter() {
+  let ctx = null, raf = 0, el = null, lv = 0, quietSince = 0;
+  return {
+    start(stream, box) {
+      this.stop();
+      const t = stream && stream.getAudioTracks()[0]; if (!t || !box) return;
+      el = box; el.hidden = false;
+      ctx = new AudioContext();
+      const an = ctx.createAnalyser(); an.fftSize = 1024;
+      ctx.createMediaStreamSource(new MediaStream([t])).connect(an);
+      const buf = new Float32Array(an.fftSize); quietSince = Date.now();
+      const loop = () => {
+        an.getFloatTimeDomainData(buf);
+        let p = 0; for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i]); if (v > p) p = v; }
+        const db = 20 * Math.log10(p || 1e-6);                 // -60dB〜0dB を 0〜100% に
+        const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100));
+        lv = pct > lv ? pct : lv * 0.9 + pct * 0.1;            // 上がるのは速く、下がるのはゆっくり
+        if (pct > 25) quietSince = Date.now();
+        const quiet = Date.now() - quietSince > 8000;
+        el.firstElementChild.style.width = lv.toFixed(0) + '%';
+        el.className = 'lvl' + (db > -3 ? ' clip' : db > -12 ? ' hot' : '') + (quiet ? ' quiet' : '');
+        el.title = (quiet ? '音が小さいか、入っていません（音量や、音声の入力を確かめてください）' : `入力の大きさ ${db.toFixed(0)}dB`) + '。押すと、⚙ 設定で大きさを変えられます';
+        raf = requestAnimationFrame(loop);
+      };
+      loop();
+    },
+    stop() { cancelAnimationFrame(raf); raf = 0; try { ctx && ctx.close(); } catch { /* 閉じている */ } ctx = null; if (el) { el.firstElementChild.style.width = '0%'; el.hidden = true; } },
+  };
+}
+const recMeter = meter(), testMeter = meter();
+let testStream = null, testT = 0;
+// ⚙ 設定で「音を確かめる」：選んだ音声の入力を15秒だけ開いて、ゲージを動かす
+let testCtx = null, testGain = null;
+function endTest() {
+  testMeter.stop();
+  if (testStream) { testStream.getTracks().forEach((t) => t.stop()); testStream = null; }
+  try { testCtx && testCtx.close(); } catch { /* 閉じている */ }
+  testCtx = null; testGain = null;
+}
+async function testLevel() {
+  clearTimeout(testT); endTest();
+  let s = Rec.stream;   // 記録中は、録音に使っている音（大きさを変えたあと）をそのまま見せる
+  if (!s) {
+    testStream = await openAudioSource(); if (!testStream) return;
+    testCtx = new AudioContext(); testGain = testCtx.createGain(); testGain.gain.value = Math.pow(10, gainDb() / 20);
+    const dst = testCtx.createMediaStreamDestination();
+    testCtx.createMediaStreamSource(testStream).connect(testGain).connect(dst);
+    s = dst.stream;
+  }
+  testMeter.start(s, $('#lvlTest'));
+  testT = setTimeout(endTest, 15000);
+}
+
+// 記録中に、録音と文字起こしの音源を、画面共有の音声に取りかえる
+async function useSharedAudio() {
+  const t = Screen.audioTrack(); if (!t) return false;
+  const old = Rec.stream;
+  Rec.stream = Gain.wrap(new MediaStream([t.clone()]));
+  Rec.rotate();                                   // 録音はここで区切り、新しい音で続ける
+  if (old) old.getTracks().forEach((x) => x.stop());
+  recMeter.start(Rec.stream, $('#lvl'));
+  if (Live.running && liveEngine() === 'whisper') { whisper().stop(); await startWhisper(); }
+  return true;
+}
 
 /* ============================== 音声の入力（音源の選択） ==============================
  * ''      … いつものマイク（ブラウザの既定）
@@ -246,7 +343,7 @@ async function openAudioSource() {
   if (src === 'share') {
     const t = Screen.audioTrack();
     if (t) return new MediaStream([t.clone()]);
-    toast('画面共有の音声がありません。「🖥」で共有するとき「タブの音声も共有する」をオンにしてください。いまは既定のマイクで録音します', 8000);
+    toast('まだ画面の音声を共有していません。それまではマイクで録音します。「🖥 画面を撮る」で共有すると（「タブの音声も共有する」をオン）、その音声に切り替えます', 9000);
   }
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: src && src !== 'share' ? { deviceId: { exact: src } } : true });
@@ -284,14 +381,18 @@ const Screen = {
     await this.video.play().catch(() => {});
     this.stream.getVideoTracks()[0].addEventListener('ended', () => this.stop());
     renderShare();
+    // 記録中に共有を始めたときは、録音と文字起こしを、共有した音声に切り替える
+    const switched = Rec.active && audioSourceId() === 'share' && this.audioTrack() ? await useSharedAudio() : false;
     if (!this.region) openRegion();
-    else toast('画面の共有を始めました。「📷 撮る」でスライドを写真にします');
+    else toast(switched ? '画面の共有を始めました。録音と文字起こしを、共有した音声に切り替えました' : '画面の共有を始めました。「📷 撮る」でスライドを写真にします', 5000);
+    if (audioSourceId() === 'share' && !this.audioTrack()) toast('音声が共有されていません。共有するとき「タブの音声も共有する」（「システム オーディオを共有」）をオンにしてください', 8000);
   },
   stop() {
     this.setAuto(false);
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
     this.stream = null; this.video = null;
     renderShare();
+    if (Rec.active && audioSourceId() === 'share') toast('画面の共有が終わったので、録音と文字起こしの音声が止まっています。もう一度「🖥 画面を撮る」で共有すると、続きから記録します', 9000);
   },
   frame(maxW) {
     const v = this.video; if (!v || !v.videoWidth) return null;
@@ -305,12 +406,14 @@ const Screen = {
   async shot(auto) {
     if (!S.lec) return;
     const c = this.frame(1600); if (!c) { toast('画面がまだ映っていません'); return; }
+    if (auto && this.blank()) return false;   // 真っ黒・真っ白の画面（場面の切りかわり）は自動では撮らない
     const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.85));
     const at = Date.now(); const s = sessionAt(at) || openSession();
     const m = await store.addImage(S.lec.id, { blob, at, sessionId: s ? s.id : '', text: auto ? '（自動で撮影）' : '', from: 'screen' });
     S.memos.push(m); renderFeed(true); markChanged();
     this.remember(this.sig()); this.lastAt = Date.now();
     if (!auto) toast('📷 撮りました');
+    return true;
   },
   // 範囲の画面を 64×36 の白黒にした「目印」。スライドが変わったかを比べる
   sig() {
@@ -323,6 +426,13 @@ const Screen = {
     const out = new Uint8Array(W * (H - 6));
     for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
     return out;
+  },
+  // いまの画面が、ほぼ一色（真っ黒など）か
+  blank() {
+    const c = this.frame(32); if (!c) return true;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let lo = 255, hi = 0; for (let i = 0; i < d.length; i += 4) { const v = (d[i] * 3 + d[i + 1] * 6 + d[i + 2]) / 10; if (v < lo) lo = v; if (v > hi) hi = v; }
+    return hi - lo < 24;
   },
   // 変わったマスの割合（0〜1）。マウスの矢印や小さな印は数マスしか変わらない
   diff(a, b) { if (!a || !b || a.length !== b.length) return 1; let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 12) n++; return n / a.length; },
@@ -346,7 +456,7 @@ const Screen = {
       if (this.seen(cur)) { this.autoState(`見張り中${this.autoN ? `（自動 ${this.autoN}枚）` : ''}`); return; }
       if (this.still < 2) { this.autoState('画面が変わりました…止まるのを待っています'); return; }
       if (Date.now() - (this.lastAt || 0) < 8000) return;
-      await this.shot(true); this.autoN++;
+      if (await this.shot(true)) this.autoN++;
       this.autoState(`見張り中（自動 ${this.autoN}枚）`);
     }, 2000);
   },
@@ -954,6 +1064,7 @@ async function openSettings() {
   renderAudioIn();
   $('#looks').innerHTML = LOOKS.map((l) => `<label class="look"><input type="radio" name="look" value="${l.k}" ${currentLook() === l.k ? 'checked' : ''}><span class="sw ${l.k}"></span><span><b>${l.label}</b><small>${l.note}</small></span></label>`).join('');
   const cur = ls('engine') || 'none';
+  $('#inGain').value = gainDb(); $('#inGainV').textContent = dbLabel(gainDb());
   const le = liveEngine(), wm = whisperModel();
   $('#liveEngines').innerHTML = [
     { k: 'web', label: 'ブラウザの音声認識', note: 'すぐに文字が出ます。マイクの音だけを聞きます。話している音声は Google（Edge では Microsoft）に送られます' },
@@ -986,6 +1097,7 @@ $('#memoIn').addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode
 $('#memoBtn').addEventListener('click', addMemo);
 $('#imgIn').addEventListener('change', (e) => { addImages([...e.target.files]); e.target.value = ''; });
 $('#settingsBtn').addEventListener('click', openSettings);
+$('#inGain').addEventListener('input', (e) => { const db = +e.target.value; ls('inGainDb', db); Gain.set(db); if (testGain) testGain.gain.value = Math.pow(10, db / 20); $('#inGainV').textContent = dbLabel(db); });
 $('#linkBtn').addEventListener('click', openLink);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal:not([hidden])').forEach((m) => (m.hidden = true)); });
 document.addEventListener('keydown', (e) => { if (e.altKey && (e.key === 's' || e.key === 'S') && Screen.stream) { e.preventDefault(); Screen.shot(false); } });
@@ -1061,6 +1173,23 @@ document.addEventListener('click', async (e) => {
     case 'region-ok': saveRegion(regionDrag && regionDrag.r); break;
     case 'region-all': saveRegion(null); break;
     case 'share-stop': Screen.stop(); break;
+    case 'level-test': testLevel(); break;
+    case 'open-settings': openSettings(); break;
+    case 'diag': {
+      const tr = Rec.stream && Rec.stream.getAudioTracks()[0];
+      const info = {
+        版: APP_VERSION + (store.PREVIEW ? '（試験版）' : ''), ブラウザ: navigator.userAgent,
+        文字起こしの方法: liveEngine(), 音声の入力の設定: audioSourceId() || '既定のマイク',
+        記録中: recording(), 録音: Rec.active ? `${tr ? `${tr.label || '(名前なし)'}・${tr.readyState}` : '音源なし'}` : '停止',
+        画面の共有: Screen.stream ? `あり・音声${Screen.audioTrack() ? 'あり' : 'なし'}` : 'なし',
+        音声の点: $('#tSpeech').textContent, WebGPU: !!navigator.gpu,
+        PCのAI: WL ? WL.status() : 'まだ使っていません',
+      };
+      const text = '講義メモ 状態の記録\n' + JSON.stringify(info, null, 1).replace(/^[{}]$/gm, '').replace(/"/g, '');
+      const box = $('#diagOut'); box.hidden = false; box.value = text; box.scrollIntoView({ block: 'nearest' });
+      toast((await copyText(text)) ? '状態をコピーしました。チャットに貼り付けてください（下にも表示しています）' : 'コピーできませんでした。下に表示した文を、スクリーンショットで送ってください', 6000);
+      break;
+    }
     case 'audio-refresh':
       try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop()); } catch { /* 許可されなかった */ }
       renderAudioIn(); break;
@@ -1170,7 +1299,7 @@ if (navigator.locks) {
 
 /* ============================== 試験版の表示 ============================== */
 if (store.PREVIEW) {
-  document.body.insertAdjacentHTML('afterbegin', '<div class="update preview-bar">試験版です。公開前の新しい機能を試すためのもので、記録は本番とは別に保存されます（本番の記録は見えません・変わりません）。</div>');
+  document.body.insertAdjacentHTML('afterbegin', `<div class="update preview-bar">試験版です（版 ${APP_VERSION}）。公開前の新しい機能を試すためのもので、記録は本番とは別に保存されます（本番の記録は見えません・変わりません）。</div>`);
   document.title = '【試験版】' + document.title;
 }
 

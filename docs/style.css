@@ -316,3 +316,18 @@ body{overflow:auto}
 .pastepv b{color:var(--navy)}
 .pastepv .tm{font-family:var(--f-mono);font-size:12px;margin-right:8px}
 .tline.imp .tm{color:var(--teal)}
+
+/* 音の大きさのゲージ */
+.lvl{display:inline-block;width:52px;height:7px;border-radius:999px;background:color-mix(in srgb,var(--line) 70%,transparent);overflow:hidden;vertical-align:middle;margin-left:2px}
+.lvl[hidden]{display:none!important}
+.lvl i{display:block;height:100%;width:0;background:var(--teal);border-radius:999px}
+.lvl.hot i{background:#d99a00}
+.lvl.clip i{background:#d64545}
+.lvl.quiet{outline:1.5px solid #d99a00;outline-offset:1px}
+.lvl.big{width:140px;height:10px}
+body.focus .ind .lvl{display:inline-block;width:36px}
+
+/* 窓がせまいとき、広く表示の帯を1行に収める */
+@media (max-width:1100px){body.focus #sName,body.focus #sTot{display:none!important}body.focus #lecSel{max-width:150px}}
+#inGain{width:180px;vertical-align:middle}
+#lvl{cursor:pointer}
