@@ -211,6 +211,7 @@ const Rec = {
   },
   async begin() {
     const s = openSession(); if (!s || !this.stream) return;
+    if (!this.stream.getAudioTracks().some((t) => t.readyState === 'live')) { setInd('Rec', 'warn', '録音 音声の入力が切れています'); clearTimeout(this.timer); this.timer = setTimeout(() => this.rotate(), 5000); return; }
     const mr = new MediaRecorder(this.stream, this.mime ? { mimeType: this.mime, audioBitsPerSecond: 32000 } : {});
     const chunk = await store.startAudio({ lectureId: S.lec.id, sessionId: s.id, startAt: Date.now(), mime: mr.mimeType || this.mime });
     S.audio.push(chunk);
@@ -281,6 +282,18 @@ async function testLevel() {
   testT = setTimeout(() => { testMeter.stop(); if (testStream) { testStream.getTracks().forEach((t) => t.stop()); testStream = null; } }, 15000);
 }
 
+// 記録中に、録音と文字起こしの音源を、画面共有の音声に取りかえる
+async function useSharedAudio() {
+  const t = Screen.audioTrack(); if (!t) return false;
+  const old = Rec.stream;
+  Rec.stream = new MediaStream([t.clone()]);
+  Rec.rotate();                                   // 録音はここで区切り、新しい音で続ける
+  if (old) old.getTracks().forEach((x) => x.stop());
+  recMeter.start(Rec.stream, $('#lvl'));
+  if (Live.running && liveEngine() === 'whisper') { whisper().stop(); await startWhisper(); }
+  return true;
+}
+
 /* ============================== 音声の入力（音源の選択） ==============================
  * ''      … いつものマイク（ブラウザの既定）
  * 'share' … 画面共有の音声（Zoom・YouTube などのタブ、または画面全体）
@@ -291,7 +304,7 @@ async function openAudioSource() {
   if (src === 'share') {
     const t = Screen.audioTrack();
     if (t) return new MediaStream([t.clone()]);
-    toast('画面共有の音声がありません。「🖥」で共有するとき「タブの音声も共有する」をオンにしてください。いまは既定のマイクで録音します', 8000);
+    toast('まだ画面の音声を共有していません。それまではマイクで録音します。「🖥 画面を撮る」で共有すると（「タブの音声も共有する」をオン）、その音声に切り替えます', 9000);
   }
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: src && src !== 'share' ? { deviceId: { exact: src } } : true });
@@ -329,14 +342,18 @@ const Screen = {
     await this.video.play().catch(() => {});
     this.stream.getVideoTracks()[0].addEventListener('ended', () => this.stop());
     renderShare();
+    // 記録中に共有を始めたときは、録音と文字起こしを、共有した音声に切り替える
+    const switched = Rec.active && audioSourceId() === 'share' && this.audioTrack() ? await useSharedAudio() : false;
     if (!this.region) openRegion();
-    else toast('画面の共有を始めました。「📷 撮る」でスライドを写真にします');
+    else toast(switched ? '画面の共有を始めました。録音と文字起こしを、共有した音声に切り替えました' : '画面の共有を始めました。「📷 撮る」でスライドを写真にします', 5000);
+    if (audioSourceId() === 'share' && !this.audioTrack()) toast('音声が共有されていません。共有するとき「タブの音声も共有する」（「システム オーディオを共有」）をオンにしてください', 8000);
   },
   stop() {
     this.setAuto(false);
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
     this.stream = null; this.video = null;
     renderShare();
+    if (Rec.active && audioSourceId() === 'share') toast('画面の共有が終わったので、録音と文字起こしの音声が止まっています。もう一度「🖥 画面を撮る」で共有すると、続きから記録します', 9000);
   },
   frame(maxW) {
     const v = this.video; if (!v || !v.videoWidth) return null;
