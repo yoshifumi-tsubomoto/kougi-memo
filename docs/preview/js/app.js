@@ -1144,7 +1144,8 @@ document.addEventListener('click', async (e) => {
         PCのAI: WL ? WL.status() : 'まだ使っていません',
       };
       const text = '講義メモ 状態の記録\n' + JSON.stringify(info, null, 1).replace(/^[{}]$/gm, '').replace(/"/g, '');
-      toast((await copyText(text)) ? '状態をコピーしました。チャットに貼り付けてください' : 'コピーできませんでした');
+      const box = $('#diagOut'); box.hidden = false; box.value = text; box.scrollIntoView({ block: 'nearest' });
+      toast((await copyText(text)) ? '状態をコピーしました。チャットに貼り付けてください（下にも表示しています）' : 'コピーできませんでした。下に表示した文を、スクリーンショットで送ってください', 6000);
       break;
     }
     case 'audio-refresh':
