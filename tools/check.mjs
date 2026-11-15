@@ -177,6 +177,14 @@ await step('清書（OpenAI）で録音を文字にし直し、清書が済ん�
   p.once('dialog', (d) => d.accept());
   await p.click('[data-act="delaudio-hq"]');
   await p.waitForFunction(() => !document.querySelector('[data-act="delaudio-hq"]'), null, { timeout: 5000 });
+  // 同じキーで要約を作る（OpenAI の代わりに、手元で決まった答えを返す）
+  await p.route('https://api.openai.com/v1/chat/completions', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: '**要旨**\n* 清書の試験の要約' } }] }) }));
+  const accept = (d) => d.accept(); p.on('dialog', accept);
+  await p.locator('[data-act="autosum"]').last().click();
+  await p.waitForFunction(() => [...document.querySelectorAll('textarea[data-sum]')].some((t) => t.value.includes('・清書の試験の要約')), null, { timeout: 5000 });
+  p.off('dialog', accept);
+  if ((await p.locator('textarea[data-sum]').last().inputValue()).includes('**')) throw new Error('要約に記号が残る');
+  await p.unroute('https://api.openai.com/v1/chat/completions');
   await p.unroute('https://api.openai.com/v1/audio/transcriptions');
   await p.evaluate(() => { localStorage.removeItem('engine'); localStorage.removeItem('openaiKey'); });
 });
