@@ -127,6 +127,10 @@
       <textarea id="diagOut" rows="12" readonly hidden style="width:100%;font-family:var(--f-mono);font-size:12px"></textarea>
       <p class="small muted">遅れがどんどん増えるときは、小さいAIにしてください。<a href="bench.html" target="_blank" rel="noopener">このPCでの速さを試す</a></p>
     </div>
+    <h4>このPCのAIのデータ</h4>
+    <p class="small muted">リアルタイムの文字起こしや清書で使うAIのデータです。時間のあるときにダウンロードしておくと、使うときにすぐ始まります。データはこのブラウザにしまわれ、本番と試験版で共通です。ダウンロード中は、このページを閉じないでください。</p>
+    <ul class="models" id="modelList"></ul>
+    <div class="sumrow"><button class="btn" type="button" data-act="dl-all" id="dlAll">まだのものを、まとめてダウンロード</button><span class="small muted">全部で約2GBの空きが必要です</span></div>
     <h4>アプリとして使う</h4>
     <div class="sumrow" id="installRow"></div>
     <h4>保存の状況</h4>

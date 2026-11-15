@@ -3,10 +3,10 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
-import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
+import { WhisperLive, MODELS as W_MODELS, defaultModel, cachedModels, downloadModel } from './whisper.js';
 import { seisho, OPENAI_MODELS, GEMINI_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.7.0 試験b6ea3ae';
+export const APP_VERSION = '0.7.0 試験0007ebc';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -1088,7 +1088,7 @@ async function openSettings() {
   $('#whisperModel').innerHTML = W_MODELS.map((m) => `<option value="${m.id}" ${m.id === wm ? 'selected' : ''}>${m.label}　${m.size}</option>`).join('');
   $('#whisperNote').textContent = (W_MODELS.find((m) => m.id === wm) || {}).note || '';
   $('#engines').innerHTML = ENGINES.map((e) => `<label class="${e.ready ? '' : 'off'}"><input type="radio" name="engine" value="${e.k}" ${cur === e.k ? 'checked' : ''} ${e.ready ? '' : 'disabled'}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
-  renderEngineOpts();
+  renderEngineOpts(); renderModels();
   $('#version').textContent = `版：${APP_VERSION}`;
   $('#settings').hidden = false;
 }
@@ -1111,6 +1111,27 @@ document.addEventListener('input', (e) => {
   const id = e.target.id;
   if (['openaiKey', 'geminiKey', 'geminiModel'].includes(id)) ls(id, e.target.value.trim() || null);
 });
+
+/* AIのデータを、まとめてダウンロードしておく */
+let DL = null;   // ダウンロード中なら { id, text }
+async function renderModels() {
+  const have = await cachedModels();
+  $('#modelList').innerHTML = W_MODELS.map((m) => {
+    const st = DL && DL.id === m.id ? `<span class="small">${esc(DL.text)}</span>` : have.has(m.id) ? '<span class="small ok">✓ 保存済み</span>' : `<button class="btn" type="button" data-act="dl-model" data-mid="${m.id}" ${DL ? 'disabled' : ''}>ダウンロード</button>`;
+    return `<li data-mid="${m.id}"><span><b>${m.label}</b>　${m.size}</span>${st}</li>`;
+  }).join('');
+  $('#dlAll').disabled = !!DL || W_MODELS.every((m) => have.has(m.id));
+}
+async function dlModels(ids) {
+  if (DL) return;
+  for (const id of ids) {
+    DL = { id, text: 'ダウンロードを始めています…' }; renderModels();
+    try {
+      await downloadModel(id, (l, t) => { DL.text = `${(l / 1048576).toFixed(0)} / ${(t / 1048576).toFixed(0)}MB`; const el = document.querySelector(`#modelList li[data-mid="${id}"] > :last-child`); if (el) el.textContent = DL.text; });
+    } catch (e) { toast('ダウンロードできませんでした：' + errMsg(e), 6000); DL = null; renderModels(); return; }
+  }
+  DL = null; renderModels(); toast('AIのデータを保存しました');
+}
 
 /* 清書を実行する（一度に1つのセッション） */
 let SEI = null;   // { sid, ctrl, state }
@@ -1161,7 +1182,7 @@ let wake = null;
 async function keepAwake() { try { if (navigator.wakeLock && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => (wake = null)); } } catch { /* 使えない環境 */ } }
 function releaseWake() { try { wake && wake.release(); } catch { /* 済み */ } wake = null; }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && recording()) keepAwake(); });
-window.addEventListener('beforeunload', (e) => { if (recording() || SEI) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', (e) => { if (recording() || SEI || DL) { e.preventDefault(); e.returnValue = ''; } });
 
 /* ============================== 操作 ============================== */
 $('#newBtn').addEventListener('click', newLecture);
@@ -1228,6 +1249,8 @@ document.addEventListener('click', async (e) => {
     case 'next': nextSession(); break;
     case 'end': endSession(); break;
     case 'seisho': runSeisho(sid); break;
+    case 'dl-model': dlModels([b.dataset.mid]); break;
+    case 'dl-all': cachedModels().then((have) => dlModels(W_MODELS.map((m) => m.id).filter((id) => !have.has(id)))); break;
     case 'seisho-stop': if (SEI) SEI.ctrl.abort(); break;
     case 'delaudio-hq': deleteHqAudio(sid); break;
     case 'prompt': {
