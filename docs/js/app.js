@@ -1133,6 +1133,20 @@ document.addEventListener('click', async (e) => {
     case 'region-all': saveRegion(null); break;
     case 'share-stop': Screen.stop(); break;
     case 'level-test': testLevel(); break;
+    case 'diag': {
+      const tr = Rec.stream && Rec.stream.getAudioTracks()[0];
+      const info = {
+        版: APP_VERSION + (store.PREVIEW ? '（試験版）' : ''), ブラウザ: navigator.userAgent,
+        文字起こしの方法: liveEngine(), 音声の入力の設定: audioSourceId() || '既定のマイク',
+        記録中: recording(), 録音: Rec.active ? `${tr ? `${tr.label || '(名前なし)'}・${tr.readyState}` : '音源なし'}` : '停止',
+        画面の共有: Screen.stream ? `あり・音声${Screen.audioTrack() ? 'あり' : 'なし'}` : 'なし',
+        音声の点: $('#tSpeech').textContent, WebGPU: !!navigator.gpu,
+        PCのAI: WL ? WL.status() : 'まだ使っていません',
+      };
+      const text = '講義メモ 状態の記録\n' + JSON.stringify(info, null, 1).replace(/^[{}]$/gm, '').replace(/"/g, '');
+      toast((await copyText(text)) ? '状態をコピーしました。チャットに貼り付けてください' : 'コピーできませんでした');
+      break;
+    }
     case 'audio-refresh':
       try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop()); } catch { /* 許可されなかった */ }
       renderAudioIn(); break;

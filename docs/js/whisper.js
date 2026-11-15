@@ -129,13 +129,13 @@ export class WhisperLive {
     const loud = this.frames.length ? Math.max(...this.frames) : 0;
     const seg = { id: ++this.seq, at: this.segAt, sec: this.n / RATE, audio, tries: 0 };
     this.parts = []; this.n = 0; this.frames = [];
-    if (loud < 0.004) return;   // ほとんど無音：AIに渡さない（決まり文句を書いてしまうため）
+    if (loud < 0.004) { this.skipped = (this.skipped || 0) + 1; return; }   // ほとんど無音：AIに渡さない（決まり文句を書いてしまうため）
     this.queue.push(seg); this.pump(); this.report();
   }
 
   pump() {
     if (this.busy || !this.queue.length || !this.worker || !this.device) return;
-    const seg = this.queue.shift(); this.busy = seg; seg.tries++;
+    const seg = this.queue.shift(); this.busy = seg; seg.tries++; this.busyAt = Date.now();
     const copy = seg.audio.slice();   // 失敗したときにやり直せるよう、元は手元に残す
     this.worker.postMessage({ type: 'run', id: seg.id, tries: seg.tries, audio: copy }, [copy.buffer]);
     // 長くかかりすぎたら、AIが止まったとみなして立ち上げ直す
@@ -149,18 +149,33 @@ export class WhisperLive {
     if (!seg || m.id !== seg.id) return;
     clearTimeout(this.watch); this.busy = null;
     if (m.type === 'text') {
-      this.fails = 0; if (!this.problem.startsWith('音声')) this.problem = '';
+      this.fails = 0; this.done = (this.done || 0) + 1; if (!this.problem.startsWith('音声')) this.problem = '';
       for (const c of m.chunks) {
         const t = c.text.trim();
         if (!t || NOISE.test(t) || t === this.lastText) continue;
         this.lastText = t;
-        this.onText(t, Math.round(seg.at + c.t * 1000));
+        this.onText(t, Math.round(seg.at + c.t * 1000)); this.lastTextAt = Date.now();
       }
       this.pump(); this.report();
     } else if (m.type === 'error') {
       if (seg.tries < 2) this.queue.unshift(seg);   // 1回だけやり直す
+      this.lastError = m.message;
       this.restart('文字にできませんでした：' + m.message);
     }
+  }
+
+  // 調べるための、いまの様子（音声や文字の中身は含めない）
+  status() {
+    const now = Date.now(), sec = (t) => (t ? Math.round((now - t) / 1000) + '秒前' : 'なし');
+    return {
+      AI: this.model, 計算: this.device || '準備中か失敗', ふつうの計算に切替: this.forceWasm,
+      聞いている: this.listening, 音の処理: this.ctx ? this.ctx.state : 'なし',
+      入力: this.track ? `${this.track.label || '(名前なし)'}・${this.track.readyState}` : 'なし',
+      最後に音が届いた: sec(this.lastFeed), ためている秒数: Math.round(this.n / RATE),
+      待っている区切り: this.queue.length, AIが処理中: this.busy ? `${Math.round(this.busy.sec)}秒の区切り（${sec(this.busyAt)}に渡した）` : 'なし',
+      文字にできた区切り: this.done || 0, 捨てた無音の区切り: this.skipped || 0, 続けて失敗: this.fails, 最後の問題: this.problem || this.lastError || 'なし',
+      最後に文字ができた: sec(this.lastTextAt),
+    };
   }
 
   // どのくらい遅れているか（まだ文字になっていない音声の秒数）
