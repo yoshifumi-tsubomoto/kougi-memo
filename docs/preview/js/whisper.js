@@ -69,7 +69,8 @@ export class WhisperLive {
     this.report();
   }
 
-  async start(stream, model) {
+  // alive：入力が切れていないかを見る元の音（大きさを変えた音は、元が切れても切れたことにならないため）
+  async start(stream, model, alive) {
     this.stopListening();
     const track = stream && stream.getAudioTracks()[0];
     if (!track) throw new Error('音声の入力がありません');
@@ -82,7 +83,7 @@ export class WhisperLive {
     const mute = ctx.createGain(); mute.gain.value = 0;
     src.connect(node); node.connect(mute); mute.connect(ctx.destination);   // 音は出さずに、処理だけ回す
     node.port.onmessage = (e) => this.feed(e.data);
-    Object.assign(this, { ctx, src, node, track, ratio: ctx.sampleRate / RATE, pos: 0, parts: [], n: 0, segAt: 0, frames: [], acc: 0, accN: 0, listening: true, lastFeed: Date.now() });
+    Object.assign(this, { ctx, src, node, track: alive || track, ratio: ctx.sampleRate / RATE, pos: 0, parts: [], n: 0, segAt: 0, frames: [], acc: 0, accN: 0, listening: true, lastFeed: Date.now() });
     // 音の処理が止められていないかを見張る（ブラウザが止めることがある）
     clearInterval(this.guard);
     this.guard = setInterval(() => {

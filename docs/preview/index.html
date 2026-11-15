@@ -48,7 +48,7 @@
   <span class="sp"></span>
   <div class="ind">
     <span data-short="音声"><i class="dot" id="dSpeech"></i><span id="tSpeech">音声認識 停止</span></span>
-    <span data-short="録音"><i class="dot" id="dRec"></i><span id="tRec">録音 停止</span><span class="lvl" id="lvl" hidden><i></i></span></span>
+    <span data-short="録音"><i class="dot" id="dRec"></i><span id="tRec">録音 停止</span><span class="lvl" id="lvl" hidden data-act="open-settings" role="button" tabindex="0"><i></i></span></span>
     <span id="linkInd" data-short="スマホ" hidden><i class="dot" id="dLink"></i><span id="tLink"></span></span>
   </div>
 </div>
@@ -113,6 +113,8 @@
     <div class="looks" id="looks" role="radiogroup" aria-label="デザイン"></div>
     <h4>音声の入力</h4>
     <div class="sumrow"><select id="audioIn" aria-label="音声の入力"></select><button class="btn" type="button" data-act="audio-refresh">一覧を更新</button><button class="btn" type="button" data-act="level-test" title="選んだ音声の入力を15秒だけ聞いて、音の大きさを見せます">🎚 音を確かめる</button><span class="lvl big" id="lvlTest" hidden><i></i></span></div>
+    <div class="sumrow"><label class="small">入力の大きさ <input type="range" id="inGain" min="-12" max="18" step="1" value="0" aria-describedby="inGainV"></label><span class="small" id="inGainV">そのまま</span></div>
+    <p class="small muted">録音と文字起こしに渡す音を、大きく（小さく）します。セッションの途中でもすぐ効きます。「🎚 音を確かめる」のゲージが、話しているときに緑で半分〜7割になるくらいが目安です。</p>
     <p class="small muted" id="audioInHint" hidden>機器の名前が出ないときは「一覧を更新」を押し、マイクの使用を許可してください。</p>
     <p class="small muted">Zoom・YouTube などの音を取り込むには、「ステレオミキサー」などPCの音が入る機器か、「画面共有の音声」を選びます。リアルタイム文字起こしにも同じ音を使うには、Chrome のマイクの設定（アドレスバー左のマーク →「サイトの設定」→「マイク」）でも同じ機器を選んでください。</p>
     <h4>リアルタイム文字起こしの方法</h4>

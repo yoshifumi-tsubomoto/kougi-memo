@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
 
-export const APP_VERSION = '0.6.1 試験40236e3';
+export const APP_VERSION = '0.6.1 試験e4ea1a6';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -193,7 +193,7 @@ function whisper() {
 }
 async function startWhisper() {
   if (!Rec.stream) { setInd('Speech', 'warn', '文字起こし（PCのAI）音声の入力がありません'); return; }
-  try { await whisper().start(Rec.stream, whisperModel()); }
+  try { await whisper().start(Rec.stream, whisperModel(), Gain.raw && Gain.raw.getAudioTracks()[0]); }
   catch (e) { setInd('Speech', 'warn', '文字起こし（PCのAI）を始められません：' + errMsg(e)); }
 }
 
@@ -203,15 +203,16 @@ const Rec = {
   active: false, stream: null, mr: null, timer: null, mime: '', count: 0,
   async start() {
     if (!window.MediaRecorder) { setInd('Rec', 'warn', '録音 未対応'); return; }
-    this.stream = await openAudioSource();
-    if (!this.stream) { setInd('Rec', 'warn', '録音 マイクが使えません'); return; }
+    const raw = await openAudioSource();
+    if (!raw) { setInd('Rec', 'warn', '録音 マイクが使えません'); return; }
+    this.stream = Gain.wrap(raw);   // 「入力の大きさ」をかけた音を、録音と文字起こしに使う
     this.mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
     this.active = true; this.begin();
     recMeter.start(this.stream, $('#lvl'));
   },
   async begin() {
     const s = openSession(); if (!s || !this.stream) return;
-    if (!this.stream.getAudioTracks().some((t) => t.readyState === 'live')) { setInd('Rec', 'warn', '録音 音声の入力が切れています'); clearTimeout(this.timer); this.timer = setTimeout(() => this.rotate(), 5000); return; }
+    if (!Gain.alive()) { setInd('Rec', 'warn', '録音 音声の入力が切れています'); clearTimeout(this.timer); this.timer = setTimeout(() => this.rotate(), 5000); return; }
     const mr = new MediaRecorder(this.stream, this.mime ? { mimeType: this.mime, audioBitsPerSecond: 32000 } : {});
     const chunk = await store.startAudio({ lectureId: S.lec.id, sessionId: s.id, startAt: Date.now(), mime: mr.mimeType || this.mime });
     S.audio.push(chunk);
@@ -235,7 +236,33 @@ const Rec = {
     this.active = false; clearTimeout(this.timer);
     if (this.mr && this.mr.state !== 'inactive') this.mr.stop();
     if (this.stream) { this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
+    Gain.close();
     this.count = 0; setInd('Rec', '', '録音 停止'); recMeter.stop();
+  },
+};
+
+/* ============================== 入力の大きさ ==============================
+ * 入ってくる音を、⚙ 設定の「入力の大きさ」の分だけ大きく（小さく）してから、録音と文字起こしに渡す。記録中でもすぐ効く */
+const gainDb = () => { const v = +ls('inGainDb'); return Number.isFinite(v) ? v : 0; };
+const dbLabel = (db) => (db === 0 ? 'そのまま' : `${db > 0 ? '+' : ''}${db}dB（${Math.pow(10, db / 20).toFixed(db > 0 ? 1 : 2)}倍）`);
+const Gain = {
+  ctx: null, node: null, raw: null,
+  wrap(raw) {
+    this.close();
+    this.raw = raw;
+    const ctx = this.ctx = new AudioContext();
+    ctx.resume().catch(() => {});
+    const g = this.node = ctx.createGain(); g.gain.value = Math.pow(10, gainDb() / 20);
+    const dst = ctx.createMediaStreamDestination();
+    ctx.createMediaStreamSource(raw).connect(g).connect(dst);
+    return dst.stream;
+  },
+  set(db) { if (this.node) this.node.gain.setTargetAtTime(Math.pow(10, db / 20), this.ctx.currentTime, 0.05); },
+  alive() { return !!this.raw && this.raw.getAudioTracks().some((t) => t.readyState === 'live'); },
+  close() {
+    try { this.ctx && this.ctx.close(); } catch { /* 閉じている */ }
+    if (this.raw) this.raw.getTracks().forEach((t) => t.stop());
+    this.ctx = null; this.node = null; this.raw = null;
   },
 };
 
@@ -262,7 +289,7 @@ function meter() {
         const quiet = Date.now() - quietSince > 8000;
         el.firstElementChild.style.width = lv.toFixed(0) + '%';
         el.className = 'lvl' + (db > -3 ? ' clip' : db > -12 ? ' hot' : '') + (quiet ? ' quiet' : '');
-        el.title = quiet ? '音が小さいか、入っていません（音量や、音声の入力を確かめてください）' : `入力の大きさ ${db.toFixed(0)}dB`;
+        el.title = (quiet ? '音が小さいか、入っていません（音量や、音声の入力を確かめてください）' : `入力の大きさ ${db.toFixed(0)}dB`) + '。押すと、⚙ 設定で大きさを変えられます';
         raf = requestAnimationFrame(loop);
       };
       loop();
@@ -273,20 +300,32 @@ function meter() {
 const recMeter = meter(), testMeter = meter();
 let testStream = null, testT = 0;
 // ⚙ 設定で「音を確かめる」：選んだ音声の入力を15秒だけ開いて、ゲージを動かす
-async function testLevel() {
-  clearTimeout(testT);
+let testCtx = null, testGain = null;
+function endTest() {
+  testMeter.stop();
   if (testStream) { testStream.getTracks().forEach((t) => t.stop()); testStream = null; }
-  const s = Rec.stream || (testStream = await openAudioSource());
-  if (!s) return;
+  try { testCtx && testCtx.close(); } catch { /* 閉じている */ }
+  testCtx = null; testGain = null;
+}
+async function testLevel() {
+  clearTimeout(testT); endTest();
+  let s = Rec.stream;   // 記録中は、録音に使っている音（大きさを変えたあと）をそのまま見せる
+  if (!s) {
+    testStream = await openAudioSource(); if (!testStream) return;
+    testCtx = new AudioContext(); testGain = testCtx.createGain(); testGain.gain.value = Math.pow(10, gainDb() / 20);
+    const dst = testCtx.createMediaStreamDestination();
+    testCtx.createMediaStreamSource(testStream).connect(testGain).connect(dst);
+    s = dst.stream;
+  }
   testMeter.start(s, $('#lvlTest'));
-  testT = setTimeout(() => { testMeter.stop(); if (testStream) { testStream.getTracks().forEach((t) => t.stop()); testStream = null; } }, 15000);
+  testT = setTimeout(endTest, 15000);
 }
 
 // 記録中に、録音と文字起こしの音源を、画面共有の音声に取りかえる
 async function useSharedAudio() {
   const t = Screen.audioTrack(); if (!t) return false;
   const old = Rec.stream;
-  Rec.stream = new MediaStream([t.clone()]);
+  Rec.stream = Gain.wrap(new MediaStream([t.clone()]));
   Rec.rotate();                                   // 録音はここで区切り、新しい音で続ける
   if (old) old.getTracks().forEach((x) => x.stop());
   recMeter.start(Rec.stream, $('#lvl'));
@@ -1025,6 +1064,7 @@ async function openSettings() {
   renderAudioIn();
   $('#looks').innerHTML = LOOKS.map((l) => `<label class="look"><input type="radio" name="look" value="${l.k}" ${currentLook() === l.k ? 'checked' : ''}><span class="sw ${l.k}"></span><span><b>${l.label}</b><small>${l.note}</small></span></label>`).join('');
   const cur = ls('engine') || 'none';
+  $('#inGain').value = gainDb(); $('#inGainV').textContent = dbLabel(gainDb());
   const le = liveEngine(), wm = whisperModel();
   $('#liveEngines').innerHTML = [
     { k: 'web', label: 'ブラウザの音声認識', note: 'すぐに文字が出ます。マイクの音だけを聞きます。話している音声は Google（Edge では Microsoft）に送られます' },
@@ -1057,6 +1097,7 @@ $('#memoIn').addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode
 $('#memoBtn').addEventListener('click', addMemo);
 $('#imgIn').addEventListener('change', (e) => { addImages([...e.target.files]); e.target.value = ''; });
 $('#settingsBtn').addEventListener('click', openSettings);
+$('#inGain').addEventListener('input', (e) => { const db = +e.target.value; ls('inGainDb', db); Gain.set(db); if (testGain) testGain.gain.value = Math.pow(10, db / 20); $('#inGainV').textContent = dbLabel(db); });
 $('#linkBtn').addEventListener('click', openLink);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal:not([hidden])').forEach((m) => (m.hidden = true)); });
 document.addEventListener('keydown', (e) => { if (e.altKey && (e.key === 's' || e.key === 'S') && Screen.stream) { e.preventDefault(); Screen.shot(false); } });
@@ -1133,6 +1174,7 @@ document.addEventListener('click', async (e) => {
     case 'region-all': saveRegion(null); break;
     case 'share-stop': Screen.stop(); break;
     case 'level-test': testLevel(); break;
+    case 'open-settings': openSettings(); break;
     case 'diag': {
       const tr = Rec.stream && Rec.stream.getAudioTracks()[0];
       const info = {
