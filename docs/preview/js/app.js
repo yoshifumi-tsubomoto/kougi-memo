@@ -3,6 +3,7 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
+import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
 
 export const APP_VERSION = '0.6.0';
 
@@ -125,6 +126,7 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const Live = {
   running: false, rec: null, utterStart: 0, lastErr: '',
   start() {
+    if (liveEngine() === 'whisper') { this.running = true; startWhisper(); return; }
     if (!SR) { setInd('Speech', 'warn', '音声認識 未対応（Chrome か Edge で開いてください）'); return; }
     this.running = true; this.open();
   },
@@ -159,7 +161,7 @@ const Live = {
     try { if (track && track.readyState === 'live') r.start(track); else r.start(); }
     catch { try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); } }
   },
-  stop() { this.running = false; this.lastErr = ''; try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
+  stop() { this.running = false; this.lastErr = ''; if (WL) WL.stop(); try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
   async push(text, at) {
     const s = sessionAt(at) || openSession();
     const row = await store.addTranscript(S.lec.id, { sessionId: s ? s.id : '', at, text });
@@ -167,6 +169,32 @@ const Live = {
     appendTLine(row);
   },
 };
+
+/* ============================== このPCのAI（Whisper）で文字起こし ==============================
+ * 選んだ音声の入力（画面共有の音声など）をそのまま聞いて、少し遅れて文字にする。音声は外に送らない */
+const liveEngine = () => ls('liveEngine') || 'web';
+const whisperModel = () => ls('whisperModel') || defaultModel();
+let WL = null;
+function whisper() {
+  if (!WL) WL = new WhisperLive({
+    onText: (text, at) => Live.push(text, at),
+    onState: (st) => {
+      if (st.phase === 'loading') { setInd('Speech', 'warn', st.text); showInterim(st.text); return; }
+      if (st.phase === 'error') { setInd('Speech', 'warn', st.text); toast(st.text, 6000); return; }
+      const lag = st.lag > 3 ? `・遅れ ${st.lag}秒` : '';
+      if (st.phase === 'on') setInd('Speech', 'on', `文字起こし（PCのAI）稼働中${lag}`);
+      else if (st.phase === 'finishing') setInd('Speech', 'warn', `文字起こし（PCのAI）残りを文字にしています${lag}`);
+      else setInd('Speech', '', '文字起こし（PCのAI）停止');
+      showInterim(st.pending ? `🎧 AIが聞き取っています…${lag ? `（${st.lag}秒遅れ）` : ''}` : '');
+    },
+  });
+  return WL;
+}
+async function startWhisper() {
+  if (!Rec.stream) { setInd('Speech', 'warn', '文字起こし（PCのAI）音声の入力がありません'); return; }
+  try { await whisper().start(Rec.stream, whisperModel()); }
+  catch (e) { setInd('Speech', 'warn', '文字起こし（PCのAI）を始められません：' + errMsg(e)); }
+}
 
 /* ============================== 録音 ==============================
  * 約10分で1区切り。1分ごとにブラウザへ書き込むので、止まっても失うのは最大1分 */
@@ -601,7 +629,7 @@ const tlineHtml = (t) => `<div class="tline${t.source === 'import' ? ' imp' : ''
 function renderTranscript() {
   const list = $('#tList');
   const live = S.transcript.filter((t) => t.source !== 'hq');
-  if (!live.length) { list.innerHTML = `<p class="empty">${openSession() ? '話し声を待っています…' + (audioSourceId() ? '<br><small>音声の入力を「マイク以外」にしています。録音はその音声で行いますが、ブラウザによっては文字起こしがマイクの音しか聞けません（Edge では共有した音声を聞けないことがあります）。文字が流れないときは Chrome で試すか、あとで清書（②）で文字にします。</small>' : '') : '「セッション開始」を押すと、ここに文字起こしが流れます。'}</p>`; list.dataset.last = ''; return; }
+  if (!live.length) { list.innerHTML = `<p class="empty">${openSession() ? '話し声を待っています…' + (audioSourceId() && liveEngine() === 'web' ? '<br><small>音声の入力を「マイク以外」にしています。録音はその音声で行いますが、ブラウザによっては文字起こしがマイクの音しか聞けません（Edge では共有した音声を聞けないことがあります）。共有した音声を文字にするには、⚙ 設定の「リアルタイム文字起こしの方法」で「このPCのAI」を選んでください。</small>' : '') : '「セッション開始」を押すと、ここに文字起こしが流れます。'}</p>`; list.dataset.last = ''; return; }
   const names = Object.fromEntries(sessions().map((s) => [s.id, s.name]));
   let html = '', last = null;
   for (const t of live) {
@@ -926,6 +954,14 @@ async function openSettings() {
   renderAudioIn();
   $('#looks').innerHTML = LOOKS.map((l) => `<label class="look"><input type="radio" name="look" value="${l.k}" ${currentLook() === l.k ? 'checked' : ''}><span class="sw ${l.k}"></span><span><b>${l.label}</b><small>${l.note}</small></span></label>`).join('');
   const cur = ls('engine') || 'none';
+  const le = liveEngine(), wm = whisperModel();
+  $('#liveEngines').innerHTML = [
+    { k: 'web', label: 'ブラウザの音声認識', note: 'すぐに文字が出ます。マイクの音だけを聞きます。話している音声は Google（Edge では Microsoft）に送られます' },
+    { k: 'whisper', label: 'このPCのAI（Whisper）', note: '「音声の入力」で選んだ音（画面共有の音声も）を、30秒〜1分ほど遅れて文字にします。音声は外に送りません。初めて使うときに、AIのデータをダウンロードします' },
+  ].map((e) => `<label><input type="radio" name="liveEngine" value="${e.k}" ${le === e.k ? 'checked' : ''}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
+  $('#whisperRow').hidden = le !== 'whisper';
+  $('#whisperModel').innerHTML = W_MODELS.map((m) => `<option value="${m.id}" ${m.id === wm ? 'selected' : ''}>${m.label}　${m.size}</option>`).join('');
+  $('#whisperNote').textContent = (W_MODELS.find((m) => m.id === wm) || {}).note || '';
   $('#engines').innerHTML = ENGINES.map((e) => `<label class="${e.ready ? '' : 'off'}"><input type="radio" name="engine" value="${e.k}" ${cur === e.k ? 'checked' : ''} ${e.ready ? '' : 'disabled'}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
   $('#version').textContent = `版：${APP_VERSION}`;
   $('#settings').hidden = false;
@@ -967,6 +1003,8 @@ document.addEventListener('drop', (e) => { e.preventDefault(); dragN = 0; $('#dr
 document.addEventListener('change', async (e) => {
   if (e.target.id === 'importIn' && e.target.files[0]) { $('#settings').hidden = true; importFile(e.target.files[0]); e.target.value = ''; return; }
   if (e.target.name === 'engine') { ls('engine', e.target.value); return; }
+  if (e.target.name === 'liveEngine') { ls('liveEngine', e.target.value); $('#whisperRow').hidden = e.target.value !== 'whisper'; toast(recording() ? '次にセッションを始めるときから、この方法を使います' : 'この方法で文字起こしします'); renderTranscript(); return; }
+  if (e.target.id === 'whisperModel') { ls('whisperModel', e.target.value); $('#whisperNote').textContent = (W_MODELS.find((m) => m.id === e.target.value) || {}).note || ''; return; }
   if (e.target.name === 'look') { setLook(e.target.value); return; }
   if (e.target.id === 'audioIn') { ls('audioIn', e.target.value || null); toast(recording() ? '次のセッションから、この音声の入力を使います' : 'この音声の入力を使います'); return; }
   if (e.target.id === 'autoShot') { Screen.setAuto(e.target.checked); if (e.target.checked) toast('スライドが変わったら自動で撮ります'); return; }
@@ -986,6 +1024,15 @@ document.addEventListener('click', async (e) => {
   const sid = b.dataset.sid, s = sessions().find((x) => x.id === sid);
   switch (b.dataset.act) {
     case 'start': startSession(); break;
+    case 'whisper-prep': {
+      b.disabled = true; $('#whisperState').textContent = '準備しています…';
+      const w = whisper(), keep = w.onState;
+      w.onState = (st) => { if (st.phase === 'loading') $('#whisperState').textContent = st.text; keep(st); };
+      w.prepare(whisperModel()).then((d) => { $('#whisperState').textContent = `準備できました（${d === 'webgpu' ? 'WebGPU で速く動きます' : d === 'wasm' ? 'ふつうの計算で動きます' : d}）`; if (!recording()) setInd('Speech', '', '文字起こし（PCのAI）準備済み'); })
+        .catch((err) => { $('#whisperState').textContent = '準備できませんでした：' + errMsg(err); })
+        .finally(() => { b.disabled = false; w.onState = keep; });
+      break;
+    }
     case 'resume': await Rec.start(); Live.start(); keepAwake(); renderCtrl(); break;
     case 'next': nextSession(); break;
     case 'end': endSession(); break;
