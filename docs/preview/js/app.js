@@ -6,7 +6,7 @@ import { parseTranscript } from './transcript.js';
 import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
 import { seisho, OPENAI_MODELS, GEMINI_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.7.0 試験729ceb4';
+export const APP_VERSION = '0.7.0 試験b6ea3ae';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -1094,11 +1094,11 @@ async function openSettings() {
 }
 
 /* 清書の方法ごとの設定（AIの大きさ・APIキー） */
-const hqModel = () => ls('hqModel') || (navigator.gpu ? 'onnx-community/whisper-large-v3-turbo' : 'Xenova/whisper-small');
+const hqModel = () => ls('hqModel') || 'Xenova/whisper-small';
 function renderEngineOpts() {
   const e = ls('engine') || 'none', box = $('#engineOpts');
   if (e === 'browser') box.innerHTML = `<label class="small">清書に使うAIの大きさ <select id="hqModel" class="mini-sel">${W_MODELS.map((m) => `<option value="${m.id}" ${m.id === hqModel() ? 'selected' : ''}>${m.label}　${m.size}</option>`).join('')}</select></label>
-    <p class="small muted">清書はあとから時間をかけてできるので、リアルタイムより大きいAIがおすすめです。</p>`;
+    <p class="small muted">まずは「中くらい（small）」で試し、時間に余裕があれば「大きい」にすると、より正確になります。「大きい」は初回のダウンロードが大きいので、時間のあるときに。</p>`;
   else if (e === 'openai') box.innerHTML = `<label class="small">OpenAI の APIキー <input type="password" id="openaiKey" autocomplete="off" placeholder="sk-…" value="${esc(ls('openaiKey') || '')}"></label>
     <label class="small">モデル <select id="openaiModel" class="mini-sel">${OPENAI_MODELS.map((m) => `<option ${m === (ls('openaiModel') || 'whisper-1') ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
     <p class="small muted">whisper-1 は、細かい時刻が付きます。キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。</p>`;

@@ -10,10 +10,12 @@ async function load(model, want) {
     return { device: 'fake' };
   }
   const T = await import(TF_URL);
-  let gpu = false;
-  if (want !== 'wasm') try { gpu = !!(self.navigator.gpu && await self.navigator.gpu.requestAdapter()); } catch { /* 使えない */ }
+  let gpu = false, f16 = false;
+  if (want !== 'wasm') try { const ad = self.navigator.gpu && await self.navigator.gpu.requestAdapter(); gpu = !!ad; f16 = !!ad && ad.features.has('shader-f16'); } catch { /* 使えない */ }
   const device = gpu ? 'webgpu' : 'wasm';
-  const dtype = gpu ? { encoder_model: 'fp32', decoder_model_merged: 'q4' } : 'q8';
+  // 大きいAI（large）は、そのままだと約2.7GBになるので、軽い形式で読み込む（fp16 で約1.4GB、使えなければ q4 で約0.6GB）
+  const large = /large/.test(model);
+  const dtype = gpu ? { encoder_model: large ? (f16 ? 'fp16' : 'q4') : 'fp32', decoder_model_merged: 'q4' } : 'q8';
   const files = {};
   asr = await T.pipeline('automatic-speech-recognition', model, {
     device, dtype,
