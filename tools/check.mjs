@@ -195,6 +195,10 @@ await step('上の ✎ で講義の名前を変えられる', async () => {
   await p.waitForFunction(() => document.querySelector('#lecSel option:checked').textContent.includes('名前を変えた講義'));
   if ((await p.inputValue('#fTitle')) !== '名前を変えた講義') throw new Error('タイトルの欄が変わらない');
 });
+await step('右上に版の番号が出る', async () => {
+  const v = await p.textContent('#verBadge');
+  if (!/^v\d+\.\d+\.\d+/.test(v)) throw new Error('版の番号が出ない：' + v);
+});
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
   await p.waitForSelector('#installModal:not([hidden]) .step.here');
