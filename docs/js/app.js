@@ -884,7 +884,7 @@ function seishoRow(s, au) {
   const hq = (S.lec.hq || {})[s.id], has = S.transcript.some((t) => t.source === 'hq' && t.sessionId === s.id);
   const engine = ls('engine') || 'none';
   if (SEI && SEI.sid === s.id) return `<div class="sumrow seisho"><span class="small" data-seistate="${esc(s.id)}">${esc(SEI.state)}</span><button class="btn ghost" type="button" data-act="seisho-stop">やめる</button></div>`;
-  if (!s.end) return '';
+  if (!s.end) return au.length ? `<div class="sumrow seisho"><span class="small muted">✨ 清書は、このセッションを終了すると使えます（「記録」の「■ 終了」）</span></div>` : '';
   const how = engine === 'none' ? '' : `（${ENGINE_NAME[engine]}）`;
   return `<div class="sumrow seisho">
     ${au.length ? `<button class="btn" type="button" data-act="seisho" data-sid="${esc(s.id)}">✨ ${has ? '清書をやり直す' : '清書する'}${how}</button>` : ''}
