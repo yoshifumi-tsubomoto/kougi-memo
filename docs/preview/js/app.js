@@ -494,9 +494,10 @@ function render(full) {
 function renderCtrl() {
   const s = openSession(), ss = sessions();
   $('#ctrlBtns').innerHTML = s
-    ? '<button class="btn" type="button" data-act="next">⏭ 次のセッションへ</button><button class="btn" type="button" data-act="end">■ 終了</button>'
-    : `<button class="btn rec" type="button" data-act="start">● ${ss.length ? 'セッションを追加して開始' : 'セッション開始'}</button>`;
+    ? '<button class="btn" type="button" data-act="next" title="次のセッションへ">⏭ 次<span class="lbl">のセッション</span>へ</button><button class="btn" type="button" data-act="end">■ 終了</button>'
+    : `<button class="btn rec" type="button" data-act="start" title="${ss.length ? 'セッションを追加して開始' : 'セッション開始'}">●<span class="lbl"> ${ss.length ? 'セッションを追加して' : 'セッション'}</span>開始</button>`;
   $('#sName').textContent = s ? s.name : ss.length ? `${ss.length}セッション記録済み` : '開始前';
+  $('#sName').classList.toggle('idle', !s);
   // ページを開き直したとき、記録中のまま残ったセッションがあれば知らせる
   if (s && !recording()) $('#ctrlBtns').insertAdjacentHTML('afterbegin', '<button class="btn rec" type="button" data-act="resume">● 記録を再開</button>');
   tick();
