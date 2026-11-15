@@ -93,6 +93,7 @@ export class WhisperLive {
       if (p) { if (this.problem !== p) { this.problem = p; this.report(); } }
       else if (this.problem.startsWith('音声')) { this.problem = ''; this.report(); }
     }, 3000);
+    this.report();
   }
 
   // 入ってきた音声を 16kHz にして、ためる
