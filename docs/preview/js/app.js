@@ -6,7 +6,7 @@ import { parseTranscript } from './transcript.js';
 import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
 import { seisho, OPENAI_MODELS, GEMINI_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.7.0 試験a55af8b';
+export const APP_VERSION = '0.7.0 試験729ceb4';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -884,7 +884,7 @@ function seishoRow(s, au) {
   const hq = (S.lec.hq || {})[s.id], has = S.transcript.some((t) => t.source === 'hq' && t.sessionId === s.id);
   const engine = ls('engine') || 'none';
   if (SEI && SEI.sid === s.id) return `<div class="sumrow seisho"><span class="small" data-seistate="${esc(s.id)}">${esc(SEI.state)}</span><button class="btn ghost" type="button" data-act="seisho-stop">やめる</button></div>`;
-  if (!s.end) return '';
+  if (!s.end) return au.length ? `<div class="sumrow seisho"><span class="small muted">✨ 清書は、このセッションを終了すると使えます（「記録」の「■ 終了」）</span></div>` : '';
   const how = engine === 'none' ? '' : `（${ENGINE_NAME[engine]}）`;
   return `<div class="sumrow seisho">
     ${au.length ? `<button class="btn" type="button" data-act="seisho" data-sid="${esc(s.id)}">✨ ${has ? '清書をやり直す' : '清書する'}${how}</button>` : ''}
