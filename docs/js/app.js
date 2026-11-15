@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, OPENAI_MODELS, GEMINI_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.7.0';
+export const APP_VERSION = '0.7.1';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -679,7 +679,7 @@ async function imageUrl(imageId) {
 function setInd(k, cls, text) { $('#d' + k).className = 'dot' + (cls ? ' ' + cls : ''); $('#t' + k).textContent = text; $('#d' + k).parentElement.title = text; }
 function render(full) {
   const has = !!S.lec;
-  $('#welcome').hidden = has; $('#metaBox').hidden = !has; $('#linkBtn').hidden = !has; $('#focusBtn').hidden = !has; $('#tabs').hidden = !has; $('#ctrl').hidden = !has || S.tab !== 'vLive';
+  $('#welcome').hidden = has; $('#metaBox').hidden = !has; $('#renameBtn').hidden = !has; $('#linkBtn').hidden = !has; $('#focusBtn').hidden = !has; $('#tabs').hidden = !has; $('#ctrl').hidden = !has || S.tab !== 'vLive';
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', has && v.id === S.tab));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === S.tab));
   if (!has) return;
@@ -1139,6 +1139,16 @@ window.addEventListener('beforeunload', (e) => { if (recording() || SEI) { e.pre
 $('#newBtn').addEventListener('click', newLecture);
 $('#newBtn2').addEventListener('click', newLecture);
 $('#lecSel').addEventListener('change', (e) => openLecture(e.target.value));
+// 講義の名前を変える（上の講義の一覧の横の ✎）
+$('#renameBtn').addEventListener('click', async () => {
+  if (!S.lec) return;
+  const t = prompt('講義の名前', S.lec.title || '');
+  if (t === null) return;
+  S.lec = await store.updateLecture(S.lec.id, { title: t.trim(), changedAt: Date.now() });
+  $('#fTitle').value = S.lec.title; refreshOption(); sendInfo();
+  if (S.tab === 'vSum') renderSummary();
+  toast('名前を変えました');
+});
 $('#metaBox').addEventListener('input', saveMeta);
 $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) { S.tab = b.dataset.tab; render(); } });
 $('#types').addEventListener('click', (e) => { const b = e.target.closest('[data-type]'); if (b) { S.type = b.dataset.type; renderTypes(); $('#memoIn').focus(); } });

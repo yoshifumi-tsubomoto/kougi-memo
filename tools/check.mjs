@@ -189,6 +189,12 @@ await step('要約に付いた ** や # の記号を、保存するときに取�
   const v = await box.inputValue();
   if (v.includes('**') || v.includes('#') || !v.includes('・振り返り')) throw new Error('記号が残る：' + v);
 });
+await step('上の ✎ で講義の名前を変えられる', async () => {
+  p.once('dialog', (d) => d.accept('名前を変えた講義'));
+  await p.click('#renameBtn');
+  await p.waitForFunction(() => document.querySelector('#lecSel option:checked').textContent.includes('名前を変えた講義'));
+  if ((await p.inputValue('#fTitle')) !== '名前を変えた講義') throw new Error('タイトルの欄が変わらない');
+});
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
   await p.waitForSelector('#installModal:not([hidden]) .step.here');
