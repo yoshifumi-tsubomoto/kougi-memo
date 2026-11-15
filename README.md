@@ -147,3 +147,4 @@ https://yoshifumi-tsubomoto.github.io/kougi-memo/preview/
 1. `docs/js/app.js` の `APP_VERSION`、`docs/sw.js` の `VERSION`、`NOTICE` の版を同じ番号に上げる（**`sw.js` を変えないと、使っている人に新しい版が届きません**）
 2. `npm run check` が通ることを確かめる
 3. `main` に入れると、GitHub Pages に反映されます。使っている人の画面には「新しい版があります」と出て、本人が押したときに切り替わります
+4. 版の番号が変わると、GitHub Actions（`.github/workflows/release.yml`）が、その版の Releases を自動で作ります。説明には、main に入れたときのコミットの文が使われます

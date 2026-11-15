@@ -1,0 +1,31 @@
+# 本番（main）の版の番号（docs/sw.js の VERSION）が変わったら、その版の Releases を自動で作る。
+# すでに同じ版の Releases があれば、何もしない。
+# 説明には、main に入れたときのコミットの文（「v0.7.1 を公開：…」）を使う。
+name: 版の記録（Releases）を作る
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/sw.js
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 版の番号を読み、まだなければ Releases を作る
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(grep -oP "VERSION = '\K[^']+" docs/sw.js)
+          if [ -z "$VER" ]; then echo "版の番号が見つかりません"; exit 1; fi
+          if gh release view "v$VER" >/dev/null 2>&1; then echo "v$VER はもうあります"; exit 0; fi
+          BODY=$(git log -1 --format=%B | sed '/^Co-Authored-By:/d;/^Claude-Session:/d')
+          printf '%s\n\nアプリを開く：https://yoshifumi-tsubomoto.github.io/kougi-memo/\n使い方：https://github.com/yoshifumi-tsubomoto/kougi-memo/blob/main/guide/README.md\n' "$BODY" > notes.md
+          gh release create "v$VER" --target "$GITHUB_SHA" --title "講義メモ v$VER" --notes-file notes.md
