@@ -131,6 +131,13 @@ await step('トランスクリプトを貼り付けて、講義の時刻に直�
   if (!got.some((t) => t.includes('11:02:03'))) throw new Error('1時間をこえる時刻が読めない：' + got.join(' / '));
   await p.click('[data-act="paste"]');
   await p.fill('#pasteBase', '10:00:00');
+  // 続きを貼る：重なった行は飛ばし、新しい行だけ足す
+  await p.fill('#pasteText', '層に分かれています\n1:02:03\n終わります\n1:02:10\n本当に終わり');
+  await p.waitForSelector('#pastePreview:has-text("取り込み済みの1行は飛ばします")');
+  await p.click('[data-act="paste-more"]');
+  await p.waitForSelector('#tList .tline.imp:has-text("本当に終わり")');
+  if ((await p.$$eval('#tList .tline.imp', (els) => els.length)) !== 3) throw new Error('重なりが飛ばされない');
+  await p.check('#pasteReplace');
   await p.fill('#pasteText', 'WEBVTT\n\n00:00:10.000 --> 00:00:12.000\n<v 講師>こんにちは');
   await p.click('[data-act="paste-ok"]');
   await p.waitForSelector('#tList .tline.imp:has-text("講師: こんにちは")');
