@@ -29,6 +29,12 @@ const WORKLET = `class Grab extends AudioWorkletProcessor {
 }
 registerProcessor('kougi-grab', Grab);`;
 
+// 同じ言葉が何回も続いたら、2回までに縮める（「なんか、なんか、なんか、…」）。ほとんどがくり返しなら、その行は捨てる
+export function squash(t) {
+  const out = t.replace(/(.{1,15}?)\1{2,}/gu, '$1$1');
+  return out.length < t.length * 0.4 && t.length > 40 ? '' : out;
+}
+
 export class WhisperLive {
   // onText(text, at)：文字ができたとき。onState({ phase, text, lag, pending, device, problem })：準備や遅れの様子
   constructor({ onText, onState }) {
@@ -152,7 +158,7 @@ export class WhisperLive {
     if (m.type === 'text') {
       this.fails = 0; this.done = (this.done || 0) + 1; if (!this.problem.startsWith('音声')) this.problem = '';
       for (const c of m.chunks) {
-        const t = c.text.trim();
+        const t = squash(c.text.trim());
         if (!t || NOISE.test(t) || t === this.lastText) continue;
         this.lastText = t;
         this.onText(t, Math.round(seg.at + c.t * 1000)); this.lastTextAt = Date.now();

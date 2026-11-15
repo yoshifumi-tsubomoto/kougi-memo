@@ -1,2 +1,2 @@
 branch: capture
-commit: e4ea1a6
+commit: ec36fa1

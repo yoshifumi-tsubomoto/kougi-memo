@@ -36,7 +36,9 @@ self.onmessage = async ({ data: m }) => {
     } else if (m.type === 'run') {
       if (fakeFail && m.id === 1 && m.tries === 1) throw new Error('試験の失敗');
       const t0 = performance.now();
-      const r = await asr(m.audio, { language: 'japanese', task: 'transcribe', return_timestamps: true, chunk_length_s: 30 });
+      // 同じ言葉をくり返し書き続ける失敗を防ぐ：同じ並び（6つ）の2回目を禁じ、音声の長さに見合う分だけ書かせる
+      const sec = m.audio.length / 16000;
+      const r = await asr(m.audio, { language: 'japanese', task: 'transcribe', return_timestamps: true, chunk_length_s: 30, no_repeat_ngram_size: 6, max_new_tokens: Math.min(440, Math.ceil(sec * 12) + 20) });
       const chunks = (r.chunks || [{ timestamp: [0], text: r.text }]).map((c) => ({ t: (c.timestamp && c.timestamp[0]) || 0, text: String(c.text || '').trim() }));
       self.postMessage({ type: 'text', id: m.id, chunks, ms: performance.now() - t0 });
     }
