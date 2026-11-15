@@ -72,9 +72,10 @@ await step('バックアップを書き出すと「書き出し済み」にな�
   const path = await dl.path();
   await p.waitForSelector('.state.ok', { timeout: 3000 });
   if ((await p.locator('#lecSel option:checked').textContent()).includes('未書き出し')) throw new Error('書き出した後も「未書き出し」のまま');
-  await p.click('#settingsBtn');
-  await p.setInputFiles('#importIn', path);
-  await p.waitForTimeout(800);
+  // 「まとめ・出力」の「バックアップを読み込む」から読み込む
+  await p.setInputFiles('#vSum input[data-import]', path);
+  await p.waitForFunction(() => /バックアップ/.test(document.querySelector('#toast').textContent), null, { timeout: 5000 });
+  await p.waitForTimeout(500);
   if ((await p.locator('#feed .fi').count()) !== 1) throw new Error('読み込み後のメモの数が違う');
 });
 
@@ -144,24 +145,49 @@ await step('トランスクリプトを貼り付けて、講義の時刻に直�
   const n = await p.$$eval('#tList .tline.imp', (els) => els.length);
   if (n !== 1) throw new Error('前に取り込んだ文字が置きかわらない（' + n + '行）');
 });
-await step('文字起こしの方法で「このPCのAI」を選ぶと、録音と同じ音声を区切って文字にする', async () => {
+await step('入力の大きさを変え、音の大きさのゲージで確かめられる', async () => {
   await p.click('#settingsBtn');
-  await p.check('input[name="liveEngine"][value="whisper"]');
-  if (!(await p.isVisible('#whisperRow'))) throw new Error('AIの大きさの欄が出ない');
   await p.fill('#inGain', '6'); await p.dispatchEvent('#inGain', 'input');
   if (!(await p.textContent('#inGainV')).includes('+6dB')) throw new Error('入力の大きさが表示されない');
   await p.click('[data-act="level-test"]');
   await p.waitForFunction(() => { const e = document.querySelector('#lvlTest'); return !e.hidden && parseFloat(e.firstElementChild.style.width) > 0; }, null, { timeout: 5000 });
   await p.click('#settings [data-close]');
-  await p.evaluate(() => localStorage.setItem('whisperModel', JSON.stringify('fake')));   // テスト用：AIの代わりに音声の長さを返す
   await p.click('[data-tab="vLive"]');
   await p.click('[data-act="start"]');
   await p.waitForSelector('#lvl:not([hidden])');
-  await p.waitForFunction(() => parseFloat(document.querySelector('#lvl i').style.width) > 0, null, { timeout: 5000 });   // 音の大きさのゲージが動く
-  await p.waitForSelector('#tList .tline:has-text("（試験）")', { timeout: 40000 });
-  if (!(await p.textContent('#tSpeech')).includes('PCのAI')) throw new Error('状態の表示がちがう：' + await p.textContent('#tSpeech'));
+  await p.waitForFunction(() => parseFloat(document.querySelector('#lvl i').style.width) > 0, null, { timeout: 5000 });   // 録音中のゲージが動く
+  await p.waitForTimeout(1500);
   await p.click('[data-act="end"]');
-  await p.evaluate(() => { localStorage.removeItem('whisperModel'); localStorage.removeItem('liveEngine'); localStorage.removeItem('inGainDb'); });
+  await p.evaluate(() => localStorage.removeItem('inGainDb'));
+});
+await step('清書（OpenAI）で録音を文字にし直し、清書が済んだ録音を消せる', async () => {
+  // OpenAI の代わりに、手元で決まった答えを返す（キーや通信は使わない）
+  let sent = 0;
+  await p.route('https://api.openai.com/v1/audio/transcriptions', (r) => { sent++; r.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: '清書の試験', segments: [{ start: 0, text: '清書の試験です。' }, { start: 2, text: 'つづきです。' }] }) }); });
+  await p.click('#settingsBtn');
+  await p.check('input[name="engine"][value="openai"]');
+  await p.fill('#openaiKey', 'sk-test');
+  await p.click('#settings [data-close]');
+  await p.click('[data-tab="vSum"]');
+  p.once('dialog', (d) => d.accept());   // 送ってよいかの確認
+  await p.locator('[data-act="seisho"]').last().click();
+  await p.waitForSelector('.seisho:has-text("清書済み")', { timeout: 30000 });
+  if (!sent) throw new Error('OpenAI に送られていない');
+  if (!(await p.textContent('#sumWrap')).includes('文字起こし（清書）')) throw new Error('清書した文字が使われない');
+  p.once('dialog', (d) => d.accept());
+  await p.click('[data-act="delaudio-hq"]');
+  await p.waitForFunction(() => !document.querySelector('[data-act="delaudio-hq"]'), null, { timeout: 5000 });
+  await p.unroute('https://api.openai.com/v1/audio/transcriptions');
+  await p.evaluate(() => { localStorage.removeItem('engine'); localStorage.removeItem('openaiKey'); });
+});
+await step('要約に付いた ** や # の記号を、保存するときに取る', async () => {
+  await p.click('[data-tab="vSum"]');
+  const box = p.locator('textarea[data-sum]').first();
+  await box.fill('## 要約\n**マイログの仕組み**：本人の回答だけ\n* 振り返り');
+  await p.locator('[data-act="savesum"]').first().click();
+  await p.waitForTimeout(300);
+  const v = await box.inputValue();
+  if (v.includes('**') || v.includes('#') || !v.includes('・振り返り')) throw new Error('記号が残る：' + v);
 });
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
@@ -218,19 +244,6 @@ await step('写真の大きさを変えられる（メモ欄・印刷）', async
   await pop3.close();
   await p.evaluate(() => { window.open = window.__open; });
   await p.click('[data-tab="vLive"]');
-});
-await step('清書の試験ページが開き、録音を選べる', async () => {
-  const b = await ctx.newPage();
-  b.on('pageerror', (e) => errors.push('試験ページのエラー：' + e.message));
-  await b.goto(base + 'bench.html');
-  await b.waitForFunction(() => !document.querySelector('#chunks').textContent.includes('探しています'));
-  // 1秒の無音の WAV を選ぶ
-  const wav = Buffer.alloc(44 + 32000);
-  wav.write('RIFF', 0); wav.writeUInt32LE(36 + 32000, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
-  wav.writeUInt32LE(16000, 24); wav.writeUInt32LE(32000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(32000, 40);
-  await b.setInputFiles('#file', { name: 'test.wav', mimeType: 'audio/wav', buffer: wav });
-  if (!(await b.textContent('#picked')).includes('test.wav')) throw new Error('音声を選べない');
-  await b.close();
 });
 await step('広く表示のとき、状態の点に短い文字が付く', async () => {
   await p.click('#focusBtn');
