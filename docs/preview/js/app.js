@@ -182,6 +182,7 @@ function whisper() {
       if (st.phase === 'loading') { setInd('Speech', 'warn', st.text); showInterim(st.text); return; }
       if (st.phase === 'error') { setInd('Speech', 'warn', st.text); toast(st.text, 6000); return; }
       const lag = st.lag > 3 ? `・遅れ ${st.lag}秒` : '';
+      if (st.problem) { setInd('Speech', 'warn', `文字起こし（PCのAI）${st.problem}`); showInterim(`⚠ ${st.problem}${lag ? `（${st.lag}秒分が待っています）` : ''}`); return; }
       if (st.phase === 'on') setInd('Speech', 'on', `文字起こし（PCのAI）稼働中${lag}`);
       else if (st.phase === 'finishing') setInd('Speech', 'warn', `文字起こし（PCのAI）残りを文字にしています${lag}`);
       else setInd('Speech', '', '文字起こし（PCのAI）停止');
@@ -349,12 +350,14 @@ const Screen = {
   async shot(auto) {
     if (!S.lec) return;
     const c = this.frame(1600); if (!c) { toast('画面がまだ映っていません'); return; }
+    if (auto && this.blank()) return false;   // 真っ黒・真っ白の画面（場面の切りかわり）は自動では撮らない
     const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.85));
     const at = Date.now(); const s = sessionAt(at) || openSession();
     const m = await store.addImage(S.lec.id, { blob, at, sessionId: s ? s.id : '', text: auto ? '（自動で撮影）' : '', from: 'screen' });
     S.memos.push(m); renderFeed(true); markChanged();
     this.remember(this.sig()); this.lastAt = Date.now();
     if (!auto) toast('📷 撮りました');
+    return true;
   },
   // 範囲の画面を 64×36 の白黒にした「目印」。スライドが変わったかを比べる
   sig() {
@@ -367,6 +370,13 @@ const Screen = {
     const out = new Uint8Array(W * (H - 6));
     for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
     return out;
+  },
+  // いまの画面が、ほぼ一色（真っ黒など）か
+  blank() {
+    const c = this.frame(32); if (!c) return true;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let lo = 255, hi = 0; for (let i = 0; i < d.length; i += 4) { const v = (d[i] * 3 + d[i + 1] * 6 + d[i + 2]) / 10; if (v < lo) lo = v; if (v > hi) hi = v; }
+    return hi - lo < 24;
   },
   // 変わったマスの割合（0〜1）。マウスの矢印や小さな印は数マスしか変わらない
   diff(a, b) { if (!a || !b || a.length !== b.length) return 1; let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 12) n++; return n / a.length; },
@@ -390,7 +400,7 @@ const Screen = {
       if (this.seen(cur)) { this.autoState(`見張り中${this.autoN ? `（自動 ${this.autoN}枚）` : ''}`); return; }
       if (this.still < 2) { this.autoState('画面が変わりました…止まるのを待っています'); return; }
       if (Date.now() - (this.lastAt || 0) < 8000) return;
-      await this.shot(true); this.autoN++;
+      if (await this.shot(true)) this.autoN++;
       this.autoState(`見張り中（自動 ${this.autoN}枚）`);
     }, 2000);
   },

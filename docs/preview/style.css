@@ -326,3 +326,6 @@ body{overflow:auto}
 .lvl.quiet{outline:1.5px solid #d99a00;outline-offset:1px}
 .lvl.big{width:140px;height:10px}
 body.focus .ind .lvl{display:inline-block;width:36px}
+
+/* 窓がせまいとき、広く表示の帯を1行に収める */
+@media (max-width:1100px){body.focus #sName,body.focus #sTot{display:none!important}body.focus #lecSel{max-width:150px}}
