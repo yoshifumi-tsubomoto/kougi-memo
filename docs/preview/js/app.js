@@ -283,32 +283,42 @@ const Screen = {
     this.remember(this.sig()); this.lastAt = Date.now();
     if (!auto) toast('📷 撮りました');
   },
-  // 範囲の画面を 32×18 の白黒にした「目印」。スライドが変わったかを比べる
+  // 範囲の画面を 64×36 の白黒にした「目印」。スライドが変わったかを比べる
   sig() {
-    const c = this.frame(32); if (!c) return null;
-    const t = document.createElement('canvas'); t.width = 32; t.height = 18;
-    const g = t.getContext('2d'); g.drawImage(c, 0, 0, 32, 18);
-    const d = g.getImageData(0, 0, 32, 18).data; const out = new Uint8Array(32 * 18);
+    const W = 64, H = 36;
+    const c = this.frame(W); if (!c) return null;
+    const t = document.createElement('canvas'); t.width = W; t.height = H;
+    const g = t.getContext('2d'); g.drawImage(c, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data;
+    // 下の 1/6（動画の再生ボタンや字幕が出る帯）は比べない
+    const out = new Uint8Array(W * (H - 6));
     for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
     return out;
   },
   // 変わったマスの割合（0〜1）。マウスの矢印や小さな印は数マスしか変わらない
-  diff(a, b) { if (!a || !b) return 1; let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 24) n++; return n / a.length; },
-  // 最近撮った画面の目印を覚えておく。同じ画面に戻っただけ（再生ボタンが出て消えた等）なら撮らない
+  diff(a, b) { if (!a || !b || a.length !== b.length) return 1; let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 12) n++; return n / a.length; },
+  // 最近撮った画面の目印を覚えておく。同じ画面に戻っただけなら撮らない
   remember(sig) { if (!sig) return; this.shots = [sig, ...(this.shots || [])].slice(0, 6); },
-  seen(cur) { return (this.shots || []).some((s) => this.diff(cur, s) < 0.2); },
+  seen(cur) { return (this.shots || []).some((s) => this.diff(cur, s) < 0.03); },
+  autoState(t) { const el = $('#autoState'); if (el) el.textContent = t; },
   setAuto(on) {
     clearInterval(this.timer); this.timer = null;
     const cb = $('#autoShot'); if (cb) cb.checked = !!on;
+    this.autoState('');
     if (!on) return;
     if (!(this.shots || []).length) this.remember(this.sig());
-    this.prev = null; this.still = 0;
-    // 2秒ごとに見る。最近撮ったどの画面とも大きく違い、4秒以上止まっていて（めくり終わった）、前に撮ってから10秒たっていれば撮る
-    this.timer = setInterval(() => {
-      const cur = this.sig(); if (!cur) return;
-      this.still = this.prev && this.diff(cur, this.prev) < 0.03 ? this.still + 1 : 0;
+    this.prev = null; this.still = 0; this.autoN = 0;
+    this.autoState('見張り中');
+    // 2秒ごとに見る。最近撮ったどの画面とも違い、4秒以上止まっていて（めくり終わった）、前に撮ってから8秒たっていれば撮る
+    this.timer = setInterval(async () => {
+      const cur = this.sig(); if (!cur) { this.autoState('画面が映っていません'); return; }
+      this.still = this.prev && this.diff(cur, this.prev) < 0.02 ? this.still + 1 : 0;
       this.prev = cur;
-      if (this.still >= 2 && Date.now() - (this.lastAt || 0) >= 10000 && !this.seen(cur)) this.shot(true);
+      if (this.seen(cur)) { this.autoState(`見張り中${this.autoN ? `（自動 ${this.autoN}枚）` : ''}`); return; }
+      if (this.still < 2) { this.autoState('画面が変わりました…止まるのを待っています'); return; }
+      if (Date.now() - (this.lastAt || 0) < 8000) return;
+      await this.shot(true); this.autoN++;
+      this.autoState(`見張り中（自動 ${this.autoN}枚）`);
     }, 2000);
   },
 };
