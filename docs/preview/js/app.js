@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, OPENAI_MODELS, GEMINI_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.7.1 試験70f1235';
+export const APP_VERSION = '0.7.2 試験f47f992';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -1157,6 +1157,9 @@ $('#memoIn').addEventListener('keydown', (e) => { if (e.isComposing || e.keyCode
 $('#memoBtn').addEventListener('click', addMemo);
 $('#imgIn').addEventListener('change', (e) => { addImages([...e.target.files]); e.target.value = ''; });
 $('#settingsBtn').addEventListener('click', openSettings);
+// いま使っている版を、右上にいつも出す
+$('#verBadge').textContent = 'v' + APP_VERSION.split(' ')[0];
+$('#verBadge').addEventListener('click', openSettings);
 $('#inGain').addEventListener('input', (e) => { const db = +e.target.value; ls('inGainDb', db); Gain.set(db); if (testGain) testGain.gain.value = Math.pow(10, db / 20); $('#inGainV').textContent = dbLabel(db); });
 $('#linkBtn').addEventListener('click', openLink);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal:not([hidden])').forEach((m) => (m.hidden = true)); });
@@ -1319,7 +1322,7 @@ applyView();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:' && !store.PREVIEW) {
   navigator.serviceWorker.register('sw.js').then((reg) => {
-    const ask = (w) => { $('#updateBar').hidden = false; $('#updateBtn').onclick = () => { if (recording()) { toast('記録中は更新できません。セッションを終了してから押してください'); return; } w.postMessage('skipWaiting'); }; };
+    const ask = (w) => { $('#updateBar').hidden = false; $('#verBadge').classList.add('new'); $('#verBadge').textContent = `v${APP_VERSION.split(' ')[0]} → 新しい版あり`; $('#verBadge').title = '新しい版が届いています。上の「更新する」を押すと切り替わります'; $('#updateBtn').onclick = () => { if (recording()) { toast('記録中は更新できません。セッションを終了してから押してください'); return; } w.postMessage('skipWaiting'); }; };
     if (reg.waiting && navigator.serviceWorker.controller) ask(reg.waiting);
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
