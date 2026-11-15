@@ -170,6 +170,7 @@ body.focus .bar{gap:6px}
 .mini-sel{width:auto;padding:1px 6px;font-size:12px;border-radius:999px}
 /* メモは普通の文章の流れで並べる。写真は左に寄せ、後に続くメモの文字が写真の横に回り込む */
 .fi{display:block;position:relative;padding:5px 26px 5px 0;overflow-wrap:anywhere}
+.fi.hasimg{clear:left}
 .fi .tm{display:inline-block;min-width:70px;font-family:var(--f-mono);font-size:12px;color:var(--muted-2)}
 .fi .tx{overflow-wrap:anywhere}
 .fi .t{white-space:pre-wrap;font-size:15px;font-family:var(--f-read)}
