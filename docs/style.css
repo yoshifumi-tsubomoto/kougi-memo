@@ -133,7 +133,10 @@ body.focus #ctrl .tot{display:none}
 body.focus #ctrl .ind{gap:4px}
 body.focus header .bar > .btn .lbl{display:none}
 body.focus header .bar > .btn{padding-inline:10px}
-body.focus #lecSel{max-width:240px}
+body.focus #lecSel{max-width:200px}
+body.focus #sName.idle,body.focus #installBtn{display:none!important}
+body.focus #ctrl .btn .lbl{display:none}
+body.focus #ctrl .el{font-size:20px}
 body.focus .bar{gap:6px}
 #focusBtn[aria-pressed="true"]{background:var(--teal-soft);color:var(--teal)}
 .btn.mini{padding:2px 10px;font-size:12px}
@@ -167,6 +170,7 @@ body.focus .bar{gap:6px}
 .mini-sel{width:auto;padding:1px 6px;font-size:12px;border-radius:999px}
 /* メモは普通の文章の流れで並べる。写真は左に寄せ、後に続くメモの文字が写真の横に回り込む */
 .fi{display:block;position:relative;padding:5px 26px 5px 0;overflow-wrap:anywhere}
+.fi.hasimg{clear:left}
 .fi .tm{display:inline-block;min-width:70px;font-family:var(--f-mono);font-size:12px;color:var(--muted-2)}
 .fi .tx{overflow-wrap:anywhere}
 .fi .t{white-space:pre-wrap;font-size:15px;font-family:var(--f-read)}
@@ -249,6 +253,13 @@ details.audio summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .welcome .lead{margin:0;font-size:15px;color:var(--muted)}
 .welcome ol{margin:0;padding-left:1.3em;color:var(--muted)}
 
+/* 画面の共有とスクリーンショット */
+.sharebar .btn{padding:2px 12px;font-size:12px}
+.sharebar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:4px 8px;border-radius:14px;background:var(--rec-soft);border:1px solid color-mix(in srgb,var(--rec) 25%,transparent)}
+.modal .box.wide{max-width:min(96vw,1200px)}
+.regioncv{max-width:100%;border-radius:10px;cursor:crosshair;touch-action:none;background:#000;justify-self:center}
+#audioIn{max-width:100%}
+
 /* スマホと連携 */
 .qrbox{display:grid;justify-items:center;gap:8px;text-align:center}
 .qrbox .qr{background:#fff;padding:8px;border-radius:12px;width:min(260px,70vw)}
@@ -277,12 +288,31 @@ body.phone{display:block;overflow:auto;min-height:100%}
 .st{font-size:12px;font-weight:700;white-space:nowrap}
 .st.ok{color:var(--ok)} .st.wait{color:var(--warn)} .st.ng{color:var(--rec)}
 
+body{overflow:auto}
+#vLive.on{min-height:460px}
+#fScroll{min-height:120px}
+#tScroll{min-height:80px}
 @media (max-width:820px){
+  html,body{height:auto;min-height:100%}
+  .view.on{flex:none}
+  #vLive.on{min-height:0;grid-template-rows:auto auto}
+  #txPane{height:38vh;min-height:220px}
+  #memoPane{height:auto;min-height:72vh}
+  #memoPane #fScroll{flex:none;height:40vh;min-height:180px}
   .meta{grid-template-columns:1fr 1fr}
   .meta #fTitle{grid-column:1 / -1}
-  #vLive.on{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1.1fr);gap:12px}
-  #vLive.on.tx-off{grid-template-columns:minmax(0,1fr);grid-template-rows:40px minmax(0,1fr)}
+  #vLive.on{grid-template-columns:minmax(0,1fr);gap:12px}
+  #vLive.on.tx-off{grid-template-columns:minmax(0,1fr)}
+  #vLive.tx-off #txPane{height:40px;min-height:0}
   #vLive.tx-off .tx-open{writing-mode:horizontal-tb}
   .brand-text small{display:none}
   .looks{grid-template-columns:1fr}
 }
+
+/* 文字起こしの貼り付け取り込み */
+#pasteText{width:100%;font-family:var(--f-read);font-size:14px;line-height:1.6}
+.pastepv{font-size:13px;color:var(--muted);max-height:140px;overflow:auto;border:1px dashed var(--line);border-radius:12px;padding:6px 10px}
+.pastepv:empty{display:none}
+.pastepv b{color:var(--navy)}
+.pastepv .tm{font-family:var(--f-mono);font-size:12px;margin-right:8px}
+.tline.imp .tm{color:var(--teal)}

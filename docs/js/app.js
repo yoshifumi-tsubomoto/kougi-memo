@@ -2,8 +2,10 @@
 import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
+import { parseTranscript } from './transcript.js';
+import { WhisperLive, MODELS as W_MODELS, defaultModel } from './whisper.js';
 
-export const APP_VERSION = '0.5.0';
+export const APP_VERSION = '0.6.0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -124,6 +126,7 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const Live = {
   running: false, rec: null, utterStart: 0, lastErr: '',
   start() {
+    if (liveEngine() === 'whisper') { this.running = true; startWhisper(); return; }
     if (!SR) { setInd('Speech', 'warn', '音声認識 未対応（Chrome か Edge で開いてください）'); return; }
     this.running = true; this.open();
   },
@@ -153,9 +156,12 @@ const Live = {
       setTimeout(() => { if (this.running) this.open(); }, this.lastErr === 'network' ? 3000 : 300);
     };
     this.rec = r;
-    try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); }
+    // 既定のマイク以外を選んでいるときは、その音声を音声認識にも渡す（対応しているブラウザだけ。対応していなければ既定のマイクを使う）
+    const track = audioSourceId() && Rec.stream ? Rec.stream.getAudioTracks()[0] : null;
+    try { if (track && track.readyState === 'live') r.start(track); else r.start(); }
+    catch { try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); } }
   },
-  stop() { this.running = false; this.lastErr = ''; try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
+  stop() { this.running = false; this.lastErr = ''; if (WL) WL.stop(); try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
   async push(text, at) {
     const s = sessionAt(at) || openSession();
     const row = await store.addTranscript(S.lec.id, { sessionId: s ? s.id : '', at, text });
@@ -164,14 +170,40 @@ const Live = {
   },
 };
 
+/* ============================== このPCのAI（Whisper）で文字起こし ==============================
+ * 選んだ音声の入力（画面共有の音声など）をそのまま聞いて、少し遅れて文字にする。音声は外に送らない */
+const liveEngine = () => ls('liveEngine') || 'web';
+const whisperModel = () => ls('whisperModel') || defaultModel();
+let WL = null;
+function whisper() {
+  if (!WL) WL = new WhisperLive({
+    onText: (text, at) => Live.push(text, at),
+    onState: (st) => {
+      if (st.phase === 'loading') { setInd('Speech', 'warn', st.text); showInterim(st.text); return; }
+      if (st.phase === 'error') { setInd('Speech', 'warn', st.text); toast(st.text, 6000); return; }
+      const lag = st.lag > 3 ? `・遅れ ${st.lag}秒` : '';
+      if (st.phase === 'on') setInd('Speech', 'on', `文字起こし（PCのAI）稼働中${lag}`);
+      else if (st.phase === 'finishing') setInd('Speech', 'warn', `文字起こし（PCのAI）残りを文字にしています${lag}`);
+      else setInd('Speech', '', '文字起こし（PCのAI）停止');
+      showInterim(st.pending ? `🎧 AIが聞き取っています…${lag ? `（${st.lag}秒遅れ）` : ''}` : '');
+    },
+  });
+  return WL;
+}
+async function startWhisper() {
+  if (!Rec.stream) { setInd('Speech', 'warn', '文字起こし（PCのAI）音声の入力がありません'); return; }
+  try { await whisper().start(Rec.stream, whisperModel()); }
+  catch (e) { setInd('Speech', 'warn', '文字起こし（PCのAI）を始められません：' + errMsg(e)); }
+}
+
 /* ============================== 録音 ==============================
  * 約10分で1区切り。1分ごとにブラウザへ書き込むので、止まっても失うのは最大1分 */
 const Rec = {
   active: false, stream: null, mr: null, timer: null, mime: '', count: 0,
   async start() {
     if (!window.MediaRecorder) { setInd('Rec', 'warn', '録音 未対応'); return; }
-    try { this.stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch (e) { setInd('Rec', 'warn', '録音 マイクが使えません'); toast('録音を開始できませんでした：' + errMsg(e)); return; }
+    this.stream = await openAudioSource();
+    if (!this.stream) { setInd('Rec', 'warn', '録音 マイクが使えません'); return; }
     this.mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
     this.active = true; this.begin();
   },
@@ -204,14 +236,252 @@ const Rec = {
   },
 };
 
+/* ============================== 音声の入力（音源の選択） ==============================
+ * ''      … いつものマイク（ブラウザの既定）
+ * 'share' … 画面共有の音声（Zoom・YouTube などのタブ、または画面全体）
+ * それ以外 … 選んだ機器（ステレオミキサー・仮想オーディオ機器・外付けマイクなど）の deviceId */
+const audioSourceId = () => ls('audioIn') || '';
+async function openAudioSource() {
+  const src = audioSourceId();
+  if (src === 'share') {
+    const t = Screen.audioTrack();
+    if (t) return new MediaStream([t.clone()]);
+    toast('画面共有の音声がありません。「🖥」で共有するとき「タブの音声も共有する」をオンにしてください。いまは既定のマイクで録音します', 8000);
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: src && src !== 'share' ? { deviceId: { exact: src } } : true });
+  } catch (e) {
+    if (src && src !== 'share') {
+      toast('選んだ音声の入力が見つかりません。既定のマイクで録音します', 6000);
+      try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { /* 下へ */ }
+    }
+    toast('録音を開始できませんでした：' + errMsg(e)); return null;
+  }
+}
+async function renderAudioIn() {
+  const sel = $('#audioIn'); if (!sel) return;
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications'); } catch { /* 一覧なし */ }
+  const cur = audioSourceId();
+  sel.innerHTML = '<option value="">いつものマイク（既定）</option>'
+    + devs.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || `音声の入力 ${i + 1}`)}${/stereo|ステレオ|mix|ミキサー|cable|blackhole|loopback/i.test(d.label) ? '（PCの音）' : ''}</option>`).join('')
+    + '<option value="share">画面共有の音声（Zoom・YouTube などのタブ）</option>';
+  sel.value = [...sel.options].some((o) => o.value === cur) ? cur : '';
+  $('#audioInHint').hidden = !devs.some((d) => !d.label) ;
+}
+
+/* ============================== 画面の共有とスクリーンショット ============================== */
+const Screen = {
+  stream: null, video: null, region: ls('shotRegion'), timer: null, shots: [], lastAt: 0, prev: null, still: 0,
+  audioTrack() { return this.stream ? this.stream.getAudioTracks().find((t) => t.readyState === 'live') || null : null; },
+  async start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { toast('このブラウザでは画面の共有ができません（Chrome か Edge のパソコン版で使えます）'); return; }
+    try {
+      this.stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: true, selfBrowserSurface: 'exclude', systemAudio: 'include' });
+    } catch { return; }   // 共有をやめた
+    this.video = document.createElement('video');
+    this.video.muted = true; this.video.playsInline = true; this.video.srcObject = this.stream;
+    await this.video.play().catch(() => {});
+    this.stream.getVideoTracks()[0].addEventListener('ended', () => this.stop());
+    renderShare();
+    if (!this.region) openRegion();
+    else toast('画面の共有を始めました。「📷 撮る」でスライドを写真にします');
+  },
+  stop() {
+    this.setAuto(false);
+    if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
+    this.stream = null; this.video = null;
+    renderShare();
+  },
+  frame(maxW) {
+    const v = this.video; if (!v || !v.videoWidth) return null;
+    const r = this.region || { x: 0, y: 0, w: 1, h: 1 };
+    const sx = r.x * v.videoWidth, sy = r.y * v.videoHeight, sw = r.w * v.videoWidth, sh = r.h * v.videoHeight;
+    const k = Math.min(1, maxW / sw);
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(sw * k)); c.height = Math.max(1, Math.round(sh * k));
+    c.getContext('2d').drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c;
+  },
+  async shot(auto) {
+    if (!S.lec) return;
+    const c = this.frame(1600); if (!c) { toast('画面がまだ映っていません'); return; }
+    const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.85));
+    const at = Date.now(); const s = sessionAt(at) || openSession();
+    const m = await store.addImage(S.lec.id, { blob, at, sessionId: s ? s.id : '', text: auto ? '（自動で撮影）' : '', from: 'screen' });
+    S.memos.push(m); renderFeed(true); markChanged();
+    this.remember(this.sig()); this.lastAt = Date.now();
+    if (!auto) toast('📷 撮りました');
+  },
+  // 範囲の画面を 64×36 の白黒にした「目印」。スライドが変わったかを比べる
+  sig() {
+    const W = 64, H = 36;
+    const c = this.frame(W); if (!c) return null;
+    const t = document.createElement('canvas'); t.width = W; t.height = H;
+    const g = t.getContext('2d'); g.drawImage(c, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data;
+    // 下の 1/6（動画の再生ボタンや字幕が出る帯）は比べない
+    const out = new Uint8Array(W * (H - 6));
+    for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    return out;
+  },
+  // 変わったマスの割合（0〜1）。マウスの矢印や小さな印は数マスしか変わらない
+  diff(a, b) { if (!a || !b || a.length !== b.length) return 1; let n = 0; for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 12) n++; return n / a.length; },
+  // 最近撮った画面の目印を覚えておく。同じ画面に戻っただけなら撮らない
+  remember(sig) { if (!sig) return; this.shots = [sig, ...(this.shots || [])].slice(0, 6); },
+  seen(cur) { return (this.shots || []).some((s) => this.diff(cur, s) < 0.03); },
+  autoState(t) { const el = $('#autoState'); if (el) el.textContent = t; },
+  setAuto(on) {
+    clearInterval(this.timer); this.timer = null;
+    const cb = $('#autoShot'); if (cb) cb.checked = !!on;
+    this.autoState('');
+    if (!on) return;
+    if (!(this.shots || []).length) this.remember(this.sig());
+    this.prev = null; this.still = 0; this.autoN = 0;
+    this.autoState('見張り中');
+    // 2秒ごとに見る。最近撮ったどの画面とも違い、4秒以上止まっていて（めくり終わった）、前に撮ってから8秒たっていれば撮る
+    this.timer = setInterval(async () => {
+      const cur = this.sig(); if (!cur) { this.autoState('画面が映っていません'); return; }
+      this.still = this.prev && this.diff(cur, this.prev) < 0.02 ? this.still + 1 : 0;
+      this.prev = cur;
+      if (this.seen(cur)) { this.autoState(`見張り中${this.autoN ? `（自動 ${this.autoN}枚）` : ''}`); return; }
+      if (this.still < 2) { this.autoState('画面が変わりました…止まるのを待っています'); return; }
+      if (Date.now() - (this.lastAt || 0) < 8000) return;
+      await this.shot(true); this.autoN++;
+      this.autoState(`見張り中（自動 ${this.autoN}枚）`);
+    }, 2000);
+  },
+};
+function renderShare() {
+  const on = !!Screen.stream;
+  $('#shareBar').hidden = !on;
+  $('#shareBtn').classList.toggle('primary', on);
+  $('#shareBtn').title = on ? '画面を共有中（押すと共有をやめる）' : 'ZoomやYouTubeの画面を共有して、スライドを撮る';
+  $('#shareBtn').textContent = on ? '🖥 共有中' : '🖥 画面を撮る';
+  if (on) $('#shareAudio').textContent = Screen.audioTrack() ? '（音声あり）' : '（音声なし）';
+}
+/* ============================== 文字起こしの貼り付け取り込み ==============================
+ * 放送大学・YouTube のトランスクリプトや Zoom・Teams の字幕を、講義の時刻に直して入れる */
+const timeStr = (ms) => hms(ms);
+function pasteBaseAt() {
+  const s = sessions().find((x) => x.id === $('#pasteSess').value);
+  const v = $('#pasteBase').value; const d = new Date(s ? s.start : Date.now());
+  if (v) { const [h, m, x] = v.split(':').map(Number); d.setHours(h, m, x || 0, 0); }
+  return d.getTime();
+}
+// 貼り付けた文を、講義の時刻に直す。すでに取り込んだ文と同じ時刻のものは、重なりとして飛ばす（長いほうを残す）
+function pastePlan() {
+  const { items, timed, dropped = 0 } = parseTranscript($('#pasteText').value, $('#pasteOrder').value);
+  const base = pasteBaseAt(), sid = $('#pasteSess').value, replace = $('#pasteReplace').checked;
+  const have = new Map();
+  for (const t of S.transcript) if (t.source === 'import' && !(replace && t.sessionId === sid)) have.set(Math.round(t.at / 1000), t);
+  const add = [], update = []; let same = 0;
+  // 時刻がないものは、1行ごとに1秒ずつずらして順番を保つ
+  items.forEach((it, i) => {
+    const at = base + (timed ? it.sec : i) * 1000, k = Math.round(at / 1000);
+    const old = have.get(k);
+    if (old) { if (it.text.length > old.text.length) update.push({ row: old, text: it.text }); else same++; return; }
+    const s = sessionAt(at); const row = { at, text: it.text, sessionId: s ? s.id : sid };
+    add.push(row); have.set(k, row);
+  });
+  return { add, update, same, dropped, timed, all: items.length };
+}
+function renderPastePreview() {
+  const p = pastePlan(), el = $('#pastePreview');
+  if (!$('#pasteText').value.trim()) { el.innerHTML = ''; return; }
+  if (!p.all) { el.innerHTML = '読み取れる文がありません'; return; }
+  const rows = p.add;
+  const extra = [p.same && `取り込み済みの${p.same}行は飛ばします`, p.update.length && `${p.update.length}行は長いほうに置きかえます`, p.dropped && `最初か最後の、途中で切れた文（時刻なし）を省きます`].filter(Boolean).join('。');
+  const head = rows.length
+    ? `<b>${rows.length}行</b>を ${p.timed ? `<b>${timeStr(rows[0].at)}〜${timeStr(rows[rows.length - 1].at)}</b> に並べます` : '時刻なしで、動画の 0:00 の時刻から順に並べます'}`
+    : '<b>新しい行はありません</b>';
+  el.innerHTML = head + (extra ? `<div>${extra}</div>` : '') + rows.slice(0, 4).map((r) => `<div><span class="tm">${timeStr(r.at)}</span>${esc(r.text.slice(0, 80))}</div>`).join('') + (rows.length > 4 ? '<div>…</div>' : '');
+}
+const savedBase = (sid) => (S.lec.pasteBase || {})[sid];
+function openPaste() {
+  if (!S.lec) return;
+  const ss = sessions(), cur = openSession() || ss[ss.length - 1];
+  $('#pasteSess').innerHTML = ss.length ? ss.map((s) => `<option value="${esc(s.id)}" ${cur && s.id === cur.id ? 'selected' : ''}>${esc(s.name)}（${hm(s.start)}〜）</option>`).join('') : '<option value="">セッション外</option>';
+  $('#pasteBase').value = savedBase($('#pasteSess').value) || timeStr(cur ? cur.start : Date.now());
+  $('#pasteOrder').value = ls('pasteOrder') || 'auto';
+  $('#pasteAuto').checked = !!ls('pasteAuto');
+  renderPastePreview();
+  $('#pasteModal').hidden = false; $('#pasteText').focus();
+}
+async function doPaste(keepOpen) {
+  const p = pastePlan(), sid = $('#pasteSess').value;
+  if (!p.all) { toast('取り込む文がありません。トランスクリプトを貼り付けてください'); return; }
+  try {
+    const r = await store.importTranscript(S.lec.id, p.add, $('#pasteReplace').checked ? sid : undefined, p.update.map((u) => ({ key: u.row.key, text: u.text })));
+    if (r.removed) S.transcript = S.transcript.filter((t) => !(t.source === 'import' && t.sessionId === sid));
+    p.update.forEach((u) => { u.row.text = u.text; });
+    S.transcript.push(...r.rows); S.transcript.sort((a, b) => a.at - b.at);
+    // 動画の 0:00 の時刻は、次に貼るときのために覚えておく（続きを貼るとき、毎回合わせなくてよい）
+    S.lec = await store.updateLecture(S.lec.id, { pasteBase: { ...(S.lec.pasteBase || {}), [sid]: $('#pasteBase').value }, changedAt: Date.now() });
+    refreshOption();
+    $('#pasteReplace').checked = false; $('#pasteText').value = ''; $('#pasteFile').value = ''; renderPastePreview();
+    if (!keepOpen) $('#pasteModal').hidden = true; else $('#pasteText').focus();
+    renderTranscript(); if (S.tab === 'vSum') renderSummary();
+    toast(`${r.rows.length}行を取り込みました${p.update.length ? `・${p.update.length}行を直しました` : ''}${p.same ? `（重なり${p.same}行は飛ばしました）` : ''}${r.removed ? `（前の${r.removed}行を置きかえ）` : ''}`);
+  } catch (e) { toast('取り込めませんでした：' + errMsg(e)); }
+}
+['#pasteText', '#pasteOrder', '#pasteBase', '#pasteReplace'].forEach((id) => $(id).addEventListener('input', renderPastePreview));
+$('#pasteReplace').addEventListener('change', renderPastePreview);
+$('#pasteAuto').addEventListener('change', () => ls('pasteAuto', $('#pasteAuto').checked));
+$('#pasteText').addEventListener('paste', () => { if ($('#pasteAuto').checked) setTimeout(() => { if ($('#pasteText').value.trim()) doPaste(true); }, 0); });
+$('#pasteOrder').addEventListener('change', () => { ls('pasteOrder', $('#pasteOrder').value); renderPastePreview(); });
+$('#pasteSess').addEventListener('change', () => { const sid = $('#pasteSess').value, s = sessions().find((x) => x.id === sid); $('#pasteBase').value = savedBase(sid) || (s ? timeStr(s.start) : $('#pasteBase').value); renderPastePreview(); });
+$('#pasteFile').addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; $('#pasteText').value = await f.text(); renderPastePreview(); });
+
+/* 範囲を決める：共有した画面の上をドラッグする */
+let regionDrag = null;
+function openRegion() {
+  const v = Screen.video; if (!v || !v.videoWidth) { setTimeout(openRegion, 300); return; }
+  const cv = $('#regionCanvas');
+  const k = Math.min(1, (window.innerWidth * 0.9) / v.videoWidth, (window.innerHeight * 0.62) / v.videoHeight);
+  cv.width = Math.round(v.videoWidth * k); cv.height = Math.round(v.videoHeight * k);
+  regionDrag = { r: Screen.region ? { ...Screen.region } : null };
+  drawRegion();
+  $('#regionModal').hidden = false;
+}
+function drawRegion() {
+  const cv = $('#regionCanvas'), g = cv.getContext('2d'), v = Screen.video; if (!v) return;
+  g.drawImage(v, 0, 0, cv.width, cv.height);
+  const r = regionDrag && regionDrag.r;
+  if (r) {
+    g.fillStyle = 'rgba(20,36,59,.55)';
+    const x = r.x * cv.width, y = r.y * cv.height, w = r.w * cv.width, h = r.h * cv.height;
+    g.fillRect(0, 0, cv.width, y); g.fillRect(0, y + h, cv.width, cv.height - y - h); g.fillRect(0, y, x, h); g.fillRect(x + w, y, cv.width - x - w, h);
+    g.strokeStyle = '#FFE45C'; g.lineWidth = 3; g.strokeRect(x, y, w, h);
+  }
+}
+function regionPoint(e) {
+  const cv = $('#regionCanvas'), b = cv.getBoundingClientRect();
+  return { x: Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)), y: Math.min(1, Math.max(0, (e.clientY - b.top) / b.height)) };
+}
+$('#regionCanvas').addEventListener('pointerdown', (e) => { e.preventDefault(); $('#regionCanvas').setPointerCapture(e.pointerId); regionDrag.start = regionPoint(e); });
+$('#regionCanvas').addEventListener('pointermove', (e) => {
+  if (!regionDrag || !regionDrag.start) return;
+  const a = regionDrag.start, b = regionPoint(e);
+  regionDrag.r = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+  drawRegion();
+});
+$('#regionCanvas').addEventListener('pointerup', () => { if (regionDrag) regionDrag.start = null; });
+function saveRegion(r) {
+  Screen.region = r && r.w > 0.03 && r.h > 0.03 ? r : null;
+  ls('shotRegion', Screen.region);
+  $('#regionModal').hidden = true;
+  Screen.shots = [];
+  toast(Screen.region ? 'この範囲を撮ります。「📷 撮る」（Alt+S）で撮影' : '画面全体を撮ります。「📷 撮る」（Alt+S）で撮影');
+}
+
 /* ============================== セッション ============================== */
 async function startSession() {
   const s = { id: store.newId(), name: `セッション${sessions().length + 1}`, start: Date.now(), end: null };
   S.lec.sessions = [...sessions(), s];
-  Live.start();   // クリックの直後に呼ぶ（マイクの許可のため）
   await saveLecture({ sessions: S.lec.sessions, changedAt: Date.now() });
   refreshOption();
-  await Rec.start();
+  await Rec.start();   // 先に音源を開く（選んだ音源を音声認識にも渡すため）
+  Live.start();
   keepAwake();
   renderCtrl(); renderTranscript(); sendInfo();
 }
@@ -340,9 +610,10 @@ function render(full) {
 function renderCtrl() {
   const s = openSession(), ss = sessions();
   $('#ctrlBtns').innerHTML = s
-    ? '<button class="btn" type="button" data-act="next">⏭ 次のセッションへ</button><button class="btn" type="button" data-act="end">■ 終了</button>'
-    : `<button class="btn rec" type="button" data-act="start">● ${ss.length ? 'セッションを追加して開始' : 'セッション開始'}</button>`;
+    ? '<button class="btn" type="button" data-act="next" title="次のセッションへ">⏭ 次<span class="lbl">のセッション</span>へ</button><button class="btn" type="button" data-act="end">■ 終了</button>'
+    : `<button class="btn rec" type="button" data-act="start" title="${ss.length ? 'セッションを追加して開始' : 'セッション開始'}">●<span class="lbl"> ${ss.length ? 'セッションを追加して' : 'セッション'}</span>開始</button>`;
   $('#sName').textContent = s ? s.name : ss.length ? `${ss.length}セッション記録済み` : '開始前';
+  $('#sName').classList.toggle('idle', !s);
   // ページを開き直したとき、記録中のまま残ったセッションがあれば知らせる
   if (s && !recording()) $('#ctrlBtns').insertAdjacentHTML('afterbegin', '<button class="btn rec" type="button" data-act="resume">● 記録を再開</button>');
   tick();
@@ -354,11 +625,11 @@ function tick() {
 }
 setInterval(() => { if (S.lec && S.tab === 'vLive') tick(); }, 1000);
 
-const tlineHtml = (t) => `<div class="tline"><span class="tm">${hms(t.at)}</span><span class="tx">${esc(t.text)}</span></div>`;
+const tlineHtml = (t) => `<div class="tline${t.source === 'import' ? ' imp' : ''}"${t.source === 'import' ? ' title="貼り付けて取り込んだ文字"' : ''}><span class="tm">${hms(t.at)}</span><span class="tx">${esc(t.text)}</span></div>`;
 function renderTranscript() {
   const list = $('#tList');
   const live = S.transcript.filter((t) => t.source !== 'hq');
-  if (!live.length) { list.innerHTML = `<p class="empty">${openSession() ? '話し声を待っています…' : '「セッション開始」を押すと、ここに文字起こしが流れます。'}</p>`; list.dataset.last = ''; return; }
+  if (!live.length) { list.innerHTML = `<p class="empty">${openSession() ? '話し声を待っています…' + (audioSourceId() && liveEngine() === 'web' ? '<br><small>音声の入力を「マイク以外」にしています。録音はその音声で行いますが、ブラウザによっては文字起こしがマイクの音しか聞けません（Edge では共有した音声を聞けないことがあります）。共有した音声を文字にするには、⚙ 設定の「リアルタイム文字起こしの方法」で「このPCのAI」を選んでください。</small>' : '') : '「セッション開始」を押すと、ここに文字起こしが流れます。'}</p>`; list.dataset.last = ''; return; }
   const names = Object.fromEntries(sessions().map((s) => [s.id, s.name]));
   let html = '', last = null;
   for (const t of live) {
@@ -389,7 +660,7 @@ function renderFeed(scroll) {
   $('#feed').innerHTML = items.map((m) => {
     const tag = TAGS[m.type];
     // 写真は左に寄せ、続くメモの文字が写真の横に回り込むようにする
-    return `<li class="fi ${esc(m.type)}">${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}<span class="tm">${hms(m.at)}</span><span class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.from === 'phone' ? '<span class="from"> 📱</span>' : m.from === 'import' ? '<span class="from"> （撮影時刻で配置）</span>' : ''}</span><button class="x" type="button" data-del="${esc(m.id)}" title="削除" aria-label="削除">×</button></li>`;
+    return `<li class="fi ${esc(m.type)}${m.imageId ? ' hasimg' : ''}">${m.imageId ? `<img data-img="${esc(m.imageId)}" alt="写真 ${hms(m.at)}">` : ''}<span class="tm">${hms(m.at)}</span><span class="tx">${tag ? `<span class="tag">${tag}</span>` : ''}<span class="t">${esc(m.text)}</span>${m.from === 'phone' ? '<span class="from"> 📱</span>' : m.from === 'screen' ? '<span class="from"> 🖥</span>' : m.from === 'import' ? '<span class="from"> （撮影時刻で配置）</span>' : ''}</span><button class="x" type="button" data-del="${esc(m.id)}" title="削除" aria-label="削除">×</button></li>`;
   }).join('');
   document.querySelectorAll('#feed img[data-img]').forEach(async (img) => {
     img.addEventListener('load', () => scrollBottom('#fScroll'), { once: true });   // 写真が読み込まれて高さが変わっても、いちばん下を見せる
@@ -448,9 +719,12 @@ $('#txClose').addEventListener('click', () => setView({ tx: false }));
 $('#txOpen').addEventListener('click', () => { setView({ tx: true }); scrollBottom('#tScroll'); });
 
 /* ============================== まとめ・出力 ============================== */
+// 文字起こしは、清書 ＞ 取り込み ＞ 速報 の順に、あるものを使う
 function sessionText(s) {
-  const hq = S.transcript.filter((t) => t.sessionId === s.id && t.source === 'hq');
-  return { kind: hq.length ? '清書' : '速報', lines: hq.length ? hq : S.transcript.filter((t) => t.sessionId === s.id && t.source !== 'hq') };
+  const of = (src) => S.transcript.filter((t) => t.sessionId === s.id && t.source === src);
+  const hq = of('hq'); if (hq.length) return { kind: '清書', lines: hq };
+  const im = of('import'); if (im.length) return { kind: '取り込み', lines: im };
+  return { kind: '速報', lines: S.transcript.filter((t) => t.sessionId === s.id && !['hq', 'import'].includes(t.source)) };
 }
 function renderSummary() {
   const ss = sessions();
@@ -677,8 +951,17 @@ async function openSettings() {
     <div style="margin-top:6px">${left.length ? `⚠ まだ書き出していない講義が <b>${left.length}</b> 件あります（講義の一覧で「●」の付いたもの）` : '✓ すべての講義を書き出し済みです'}</div>
     <div class="sumrow" style="margin-top:8px"><label class="btn">バックアップを読み込む<input type="file" id="importIn" accept=".json,application/json" hidden></label></div>`;
   refreshInstall();
+  renderAudioIn();
   $('#looks').innerHTML = LOOKS.map((l) => `<label class="look"><input type="radio" name="look" value="${l.k}" ${currentLook() === l.k ? 'checked' : ''}><span class="sw ${l.k}"></span><span><b>${l.label}</b><small>${l.note}</small></span></label>`).join('');
   const cur = ls('engine') || 'none';
+  const le = liveEngine(), wm = whisperModel();
+  $('#liveEngines').innerHTML = [
+    { k: 'web', label: 'ブラウザの音声認識', note: 'すぐに文字が出ます。マイクの音だけを聞きます。話している音声は Google（Edge では Microsoft）に送られます' },
+    { k: 'whisper', label: 'このPCのAI（Whisper）', note: '「音声の入力」で選んだ音（画面共有の音声も）を、30秒〜1分ほど遅れて文字にします。音声は外に送りません。初めて使うときに、AIのデータをダウンロードします' },
+  ].map((e) => `<label><input type="radio" name="liveEngine" value="${e.k}" ${le === e.k ? 'checked' : ''}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
+  $('#whisperRow').hidden = le !== 'whisper';
+  $('#whisperModel').innerHTML = W_MODELS.map((m) => `<option value="${m.id}" ${m.id === wm ? 'selected' : ''}>${m.label}　${m.size}</option>`).join('');
+  $('#whisperNote').textContent = (W_MODELS.find((m) => m.id === wm) || {}).note || '';
   $('#engines').innerHTML = ENGINES.map((e) => `<label class="${e.ready ? '' : 'off'}"><input type="radio" name="engine" value="${e.k}" ${cur === e.k ? 'checked' : ''} ${e.ready ? '' : 'disabled'}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
   $('#version').textContent = `版：${APP_VERSION}`;
   $('#settings').hidden = false;
@@ -705,6 +988,7 @@ $('#imgIn').addEventListener('change', (e) => { addImages([...e.target.files]); 
 $('#settingsBtn').addEventListener('click', openSettings);
 $('#linkBtn').addEventListener('click', openLink);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal:not([hidden])').forEach((m) => (m.hidden = true)); });
+document.addEventListener('keydown', (e) => { if (e.altKey && (e.key === 's' || e.key === 'S') && Screen.stream) { e.preventDefault(); Screen.shot(false); } });
 document.addEventListener('keydown', (e) => { if (e.altKey && /^[1-5]$/.test(e.key) && S.lec) { e.preventDefault(); S.type = TYPES[+e.key - 1].k; renderTypes(); } });
 document.addEventListener('paste', (e) => {
   const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
@@ -719,7 +1003,11 @@ document.addEventListener('drop', (e) => { e.preventDefault(); dragN = 0; $('#dr
 document.addEventListener('change', async (e) => {
   if (e.target.id === 'importIn' && e.target.files[0]) { $('#settings').hidden = true; importFile(e.target.files[0]); e.target.value = ''; return; }
   if (e.target.name === 'engine') { ls('engine', e.target.value); return; }
+  if (e.target.name === 'liveEngine') { ls('liveEngine', e.target.value); $('#whisperRow').hidden = e.target.value !== 'whisper'; toast(recording() ? '次にセッションを始めるときから、この方法を使います' : 'この方法で文字起こしします'); renderTranscript(); return; }
+  if (e.target.id === 'whisperModel') { ls('whisperModel', e.target.value); $('#whisperNote').textContent = (W_MODELS.find((m) => m.id === e.target.value) || {}).note || ''; return; }
   if (e.target.name === 'look') { setLook(e.target.value); return; }
+  if (e.target.id === 'audioIn') { ls('audioIn', e.target.value || null); toast(recording() ? '次のセッションから、この音声の入力を使います' : 'この音声の入力を使います'); return; }
+  if (e.target.id === 'autoShot') { Screen.setAuto(e.target.checked); if (e.target.checked) toast('スライドが変わったら自動で撮ります'); return; }
   const sn = e.target.closest('[data-sname]');
   if (sn && sn.tagName === 'INPUT') {
     const s = sessions().find((x) => x.id === sn.dataset.sname); if (!s) return;
@@ -736,7 +1024,16 @@ document.addEventListener('click', async (e) => {
   const sid = b.dataset.sid, s = sessions().find((x) => x.id === sid);
   switch (b.dataset.act) {
     case 'start': startSession(); break;
-    case 'resume': Live.start(); await Rec.start(); keepAwake(); renderCtrl(); break;
+    case 'whisper-prep': {
+      b.disabled = true; $('#whisperState').textContent = '準備しています…';
+      const w = whisper(), keep = w.onState;
+      w.onState = (st) => { if (st.phase === 'loading') $('#whisperState').textContent = st.text; keep(st); };
+      w.prepare(whisperModel()).then((d) => { $('#whisperState').textContent = `準備できました（${d === 'webgpu' ? 'WebGPU で速く動きます' : d === 'wasm' ? 'ふつうの計算で動きます' : d}）`; if (!recording()) setInd('Speech', '', '文字起こし（PCのAI）準備済み'); })
+        .catch((err) => { $('#whisperState').textContent = '準備できませんでした：' + errMsg(err); })
+        .finally(() => { b.disabled = false; w.onState = keep; });
+      break;
+    }
+    case 'resume': await Rec.start(); Live.start(); keepAwake(); renderCtrl(); break;
     case 'next': nextSession(); break;
     case 'end': endSession(); break;
     case 'prompt': {
@@ -755,6 +1052,18 @@ document.addEventListener('click', async (e) => {
     case 'nudge-folder': S.tab = 'vSum'; render(); if (window.showDirectoryPicker) exportFolder(); break;
     case 'nudge-backup': S.tab = 'vSum'; render(); break;
     case 'nudge-close': $('#nudge').hidden = true; break;
+    case 'share': Screen.stream ? Screen.stop() : Screen.start(); break;
+    case 'shot': Screen.shot(false); break;
+    case 'paste': openPaste(); break;
+    case 'paste-ok': doPaste(false); break;
+    case 'paste-more': doPaste(true); break;
+    case 'region': openRegion(); break;
+    case 'region-ok': saveRegion(regionDrag && regionDrag.r); break;
+    case 'region-all': saveRegion(null); break;
+    case 'share-stop': Screen.stop(); break;
+    case 'audio-refresh':
+      try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop()); } catch { /* 許可されなかった */ }
+      renderAudioIn(); break;
     case 'install': $('#settings').hidden = true; doInstall(); break;
     case 'link-stop': stopLink(); $('#linkModal').hidden = true; toast('スマホとの連携を止めました'); break;
     case 'link-new': newLinkId(); break;

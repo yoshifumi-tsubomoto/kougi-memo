@@ -6,7 +6,7 @@ import { serve } from './serve.mjs';
 const { chromium } = createRequire(import.meta.url)('playwright');
 const server = await serve(0);
 const base = `http://localhost:${server.address().port}/`;
-const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
+const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--auto-select-desktop-capture-source=Entire screen', '--enable-usermedia-screen-capturing'] });
 const ctx = await browser.newContext({ permissions: ['microphone'] });
 const p = await ctx.newPage();
 const errors = [];
@@ -117,6 +117,46 @@ await step('広く表示・文字起こしをたたむ（開き直しても保�
   if (!(await p.isVisible('#metaBox')) || !(await p.isVisible('#tScroll'))) throw new Error('元に戻せない');
   if (await p.evaluate(() => !!document.querySelector('header #ctrl'))) throw new Error('セッション操作が元の場所に戻らない');
 });
+await step('トランスクリプトを貼り付けて、講義の時刻に直して取り込める（置きかえもできる）', async () => {
+  await p.click('[data-tab="vLive"]');
+  await p.click('[data-act="paste"]');
+  await p.waitForSelector('#pasteModal:not([hidden])');
+  await p.fill('#pasteBase', '10:00:00');
+  await p.fill('#pasteText', '0:05\n地球の内部は\n層に分かれています\n1:02:03\n終わります');
+  await p.waitForSelector('#pastePreview:has-text("10:00:05")');
+  await p.click('[data-act="paste-ok"]');
+  await p.waitForSelector('#tList .tline.imp');
+  const got = await p.$$eval('#tList .tline.imp', (els) => els.map((e) => e.textContent));
+  if (!got.some((t) => t.includes('10:00:05') && t.includes('地球の内部は層に分かれています'))) throw new Error('時刻か文がちがう：' + got.join(' / '));
+  if (!got.some((t) => t.includes('11:02:03'))) throw new Error('1時間をこえる時刻が読めない：' + got.join(' / '));
+  await p.click('[data-act="paste"]');
+  await p.fill('#pasteBase', '10:00:00');
+  // 続きを貼る：重なった行は飛ばし、新しい行だけ足す
+  await p.fill('#pasteText', '層に分かれています\n1:02:03\n終わります\n1:02:10\n本当に終わり');
+  await p.waitForSelector('#pastePreview:has-text("取り込み済みの1行は飛ばします")');
+  await p.click('[data-act="paste-more"]');
+  await p.waitForSelector('#tList .tline.imp:has-text("本当に終わり")');
+  if ((await p.$$eval('#tList .tline.imp', (els) => els.length)) !== 3) throw new Error('重なりが飛ばされない');
+  await p.check('#pasteReplace');
+  await p.fill('#pasteText', 'WEBVTT\n\n00:00:10.000 --> 00:00:12.000\n<v 講師>こんにちは');
+  await p.click('[data-act="paste-ok"]');
+  await p.waitForSelector('#tList .tline.imp:has-text("講師: こんにちは")');
+  const n = await p.$$eval('#tList .tline.imp', (els) => els.length);
+  if (n !== 1) throw new Error('前に取り込んだ文字が置きかわらない（' + n + '行）');
+});
+await step('文字起こしの方法で「このPCのAI」を選ぶと、録音と同じ音声を区切って文字にする', async () => {
+  await p.click('#settingsBtn');
+  await p.check('input[name="liveEngine"][value="whisper"]');
+  if (!(await p.isVisible('#whisperRow'))) throw new Error('AIの大きさの欄が出ない');
+  await p.click('#settings [data-close]');
+  await p.evaluate(() => localStorage.setItem('whisperModel', JSON.stringify('fake')));   // テスト用：AIの代わりに音声の長さを返す
+  await p.click('[data-tab="vLive"]');
+  await p.click('[data-act="start"]');
+  await p.waitForSelector('#tList .tline:has-text("（試験）")', { timeout: 40000 });
+  if (!(await p.textContent('#tSpeech')).includes('PCのAI')) throw new Error('状態の表示がちがう：' + await p.textContent('#tSpeech'));
+  await p.click('[data-act="end"]');
+  await p.evaluate(() => { localStorage.removeItem('whisperModel'); localStorage.removeItem('liveEngine'); });
+});
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
   await p.waitForSelector('#installModal:not([hidden]) .step.here');
@@ -191,6 +231,31 @@ await step('広く表示のとき、状態の点に短い文字が付く', async
   const t = await p.$eval('.ind > span[data-short="録音"]', (e) => getComputedStyle(e, '::after').content);
   await p.click('#focusBtn');
   if (!t.includes('録音')) throw new Error('文字が付かない：' + t);
+});
+await step('画面を共有して、範囲を決めてスクリーンショットを撮る', async () => {
+  await p.click('[data-tab="vLive"]');
+  const before = await p.locator('#feed .fi.photo').count();
+  await p.click('#shareBtn');
+  await p.waitForSelector('#regionModal:not([hidden])', { timeout: 8000 });
+  const box = await p.$eval('#regionCanvas', (c) => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; });
+  await p.mouse.move(box.x + box.w * 0.2, box.y + box.h * 0.2); await p.mouse.down();
+  await p.mouse.move(box.x + box.w * 0.7, box.y + box.h * 0.6, { steps: 5 }); await p.mouse.up();
+  await p.click('[data-act="region-ok"]');
+  if (!(await p.isVisible('#shareBar'))) throw new Error('共有中の帯が出ない');
+  await p.click('[data-act="shot"]');
+  await p.waitForFunction((n) => document.querySelectorAll('#feed .fi.photo').length > n, before, { timeout: 5000 });
+  const r = await p.evaluate(() => JSON.parse(localStorage.getItem('shotRegion')));
+  if (!r || Math.abs(r.w - 0.5) > 0.05) throw new Error('範囲が保存されない：' + JSON.stringify(r));
+  await p.click('[data-act="share-stop"]');
+  if (await p.isVisible('#shareBar')) throw new Error('共有をやめられない');
+});
+await step('音声の入力を選べる（設定）', async () => {
+  await p.click('#settingsBtn');
+  await p.waitForFunction(() => document.querySelectorAll('#audioIn option').length >= 2);
+  await p.selectOption('#audioIn', 'share');
+  if ((await p.evaluate(() => JSON.parse(localStorage.getItem('audioIn')))) !== 'share') throw new Error('保存されない');
+  await p.selectOption('#audioIn', '');
+  await p.click('#settings [data-close]');
 });
 // スマホとの連携（手元に仲介サーバーを立てて、PCとスマホの2つの画面で確かめる）
 let peerServer = null;
