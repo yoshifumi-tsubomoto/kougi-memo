@@ -250,7 +250,8 @@ details.audio summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .welcome ol{margin:0;padding-left:1.3em;color:var(--muted)}
 
 /* 画面の共有とスクリーンショット */
-.sharebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 10px;border-radius:14px;background:var(--rec-soft);border:1px solid color-mix(in srgb,var(--rec) 25%,transparent)}
+.sharebar .btn{padding:2px 12px;font-size:12px}
+.sharebar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:4px 8px;border-radius:14px;background:var(--rec-soft);border:1px solid color-mix(in srgb,var(--rec) 25%,transparent)}
 .modal .box.wide{max-width:min(96vw,1200px)}
 .regioncv{max-width:100%;border-radius:10px;cursor:crosshair;touch-action:none;background:#000;justify-self:center}
 #audioIn{max-width:100%}
@@ -283,11 +284,22 @@ body.phone{display:block;overflow:auto;min-height:100%}
 .st{font-size:12px;font-weight:700;white-space:nowrap}
 .st.ok{color:var(--ok)} .st.wait{color:var(--warn)} .st.ng{color:var(--rec)}
 
+body{overflow:auto}
+#vLive.on{min-height:460px}
+#fScroll{min-height:120px}
+#tScroll{min-height:80px}
 @media (max-width:820px){
+  html,body{height:auto;min-height:100%}
+  .view.on{flex:none}
+  #vLive.on{min-height:0;grid-template-rows:auto auto}
+  #txPane{height:38vh;min-height:220px}
+  #memoPane{height:auto;min-height:72vh}
+  #memoPane #fScroll{flex:none;height:40vh;min-height:180px}
   .meta{grid-template-columns:1fr 1fr}
   .meta #fTitle{grid-column:1 / -1}
-  #vLive.on{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,1.1fr);gap:12px}
-  #vLive.on.tx-off{grid-template-columns:minmax(0,1fr);grid-template-rows:40px minmax(0,1fr)}
+  #vLive.on{grid-template-columns:minmax(0,1fr);gap:12px}
+  #vLive.on.tx-off{grid-template-columns:minmax(0,1fr)}
+  #vLive.tx-off #txPane{height:40px;min-height:0}
   #vLive.tx-off .tx-open{writing-mode:horizontal-tb}
   .brand-text small{display:none}
   .looks{grid-template-columns:1fr}
