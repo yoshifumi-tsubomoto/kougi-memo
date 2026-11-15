@@ -308,3 +308,11 @@ body{overflow:auto}
   .brand-text small{display:none}
   .looks{grid-template-columns:1fr}
 }
+
+/* 文字起こしの貼り付け取り込み */
+#pasteText{width:100%;font-family:var(--f-read);font-size:14px;line-height:1.6}
+.pastepv{font-size:13px;color:var(--muted);max-height:140px;overflow:auto;border:1px dashed var(--line);border-radius:12px;padding:6px 10px}
+.pastepv:empty{display:none}
+.pastepv b{color:var(--navy)}
+.pastepv .tm{font-family:var(--f-mono);font-size:12px;margin-right:8px}
+.tline.imp .tm{color:var(--teal)}

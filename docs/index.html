@@ -79,7 +79,7 @@
 <section class="view" id="vLive">
   <div class="pane" id="txPane">
     <button class="tx-open" type="button" id="txOpen" title="文字起こしを表示する">▶ 文字起こし</button>
-    <h2><span class="en">TRANSCRIPT</span>文字起こし<span class="sp"></span><label class="small"><input type="checkbox" id="autoScroll" checked> 自動スクロール</label><button class="btn ghost mini" type="button" id="txClose" title="文字起こしを隠して、メモを広くします">◀ たたむ</button></h2>
+    <h2><span class="en">TRANSCRIPT</span>文字起こし<span class="sp"></span><label class="small"><input type="checkbox" id="autoScroll" checked> 自動スクロール</label><button class="btn ghost mini" type="button" data-act="paste" title="放送大学・YouTube のトランスクリプトや、Zoom・Teams の字幕ファイルを取り込む">📋 貼り付け</button><button class="btn ghost mini" type="button" id="txClose" title="文字起こしを隠して、メモを広くします">◀ たたむ</button></h2>
     <div class="scroll" id="tScroll"><div id="tList"></div><div class="tline interim" id="interim" hidden><span class="tm">…</span><span class="tx"></span></div></div>
   </div>
   <div class="pane" id="memoPane">
@@ -156,6 +156,24 @@
     <p class="small">共有した画面の上を、スライドの部分だけドラッグして囲んでください。</p>
     <canvas id="regionCanvas" class="regioncv"></canvas>
     <div class="sumrow"><button class="btn primary" type="button" data-act="region-ok">この範囲にする</button><button class="btn" type="button" data-act="region-all">画面全体を撮る</button><button class="btn ghost" type="button" data-close>やめる</button></div>
+  </div>
+</div>
+<div class="modal" id="pasteModal" hidden>
+  <div class="box wide">
+    <h3>文字起こしを貼り付けて取り込む</h3>
+    <p class="small">放送大学・YouTube などの「トランスクリプト」をコピーして貼り付けるか、Zoom・Teams の字幕ファイル（.vtt・.srt）を選びます。動画の時刻（06:47 など）を、講義の時刻に直して並べます。</p>
+    <textarea id="pasteText" rows="9" placeholder="ここに貼り付け（Ctrl+V）"></textarea>
+    <div class="sumrow">
+      <label class="btn">ファイルを選ぶ（.vtt .srt .txt）<input type="file" id="pasteFile" accept=".vtt,.srt,.txt,text/plain,text/vtt" hidden></label>
+      <label class="small">時刻の位置 <select id="pasteOrder" class="mini-sel"><option value="auto">自動</option><option value="before">文の前</option><option value="after">文の後</option></select></label>
+    </div>
+    <div class="sumrow">
+      <label class="small">入れるセッション <select id="pasteSess"></select></label>
+      <label class="small">動画の 0:00 の時刻 <input type="time" step="1" id="pasteBase"></label>
+    </div>
+    <label class="small"><input type="checkbox" id="pasteReplace" checked> 前にこのセッションへ取り込んだ文字は置きかえる</label>
+    <div class="pastepv" id="pastePreview"></div>
+    <div class="sumrow"><button class="btn primary" type="button" data-act="paste-ok">取り込む</button><button class="btn ghost" type="button" data-close>やめる</button></div>
   </div>
 </div>
 <div class="modal" id="installModal" hidden>

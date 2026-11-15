@@ -2,6 +2,7 @@
 import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
+import { parseTranscript } from './transcript.js';
 
 export const APP_VERSION = '0.6.0';
 
@@ -330,6 +331,53 @@ function renderShare() {
   $('#shareBtn').textContent = on ? '🖥 共有中' : '🖥 画面を撮る';
   if (on) $('#shareAudio').textContent = Screen.audioTrack() ? '（音声あり）' : '（音声なし）';
 }
+/* ============================== 文字起こしの貼り付け取り込み ==============================
+ * 放送大学・YouTube のトランスクリプトや Zoom・Teams の字幕を、講義の時刻に直して入れる */
+const timeStr = (ms) => hms(ms);
+function pasteBaseAt() {
+  const s = sessions().find((x) => x.id === $('#pasteSess').value);
+  const v = $('#pasteBase').value; const d = new Date(s ? s.start : Date.now());
+  if (v) { const [h, m, x] = v.split(':').map(Number); d.setHours(h, m, x || 0, 0); }
+  return d.getTime();
+}
+function pastePlan() {
+  const { items, timed } = parseTranscript($('#pasteText').value, $('#pasteOrder').value);
+  const base = pasteBaseAt(), sid = $('#pasteSess').value;
+  // 時刻がないものは、1行ごとに1秒ずつずらして順番を保つ
+  const rows = items.map((it, i) => { const at = base + (timed ? it.sec : i) * 1000; const s = sessionAt(at); return { at, text: it.text, sessionId: s ? s.id : sid }; });
+  return { rows, timed };
+}
+function renderPastePreview() {
+  const { rows, timed } = pastePlan(); const el = $('#pastePreview');
+  if (!$('#pasteText').value.trim()) { el.innerHTML = ''; return; }
+  if (!rows.length) { el.innerHTML = '読み取れる文がありません'; return; }
+  const head = `<b>${rows.length}行</b>を ${timed ? `<b>${timeStr(rows[0].at)}〜${timeStr(rows[rows.length - 1].at)}</b> に並べます` : '時刻なしで、動画の 0:00 の時刻から順に並べます'}`;
+  el.innerHTML = head + rows.slice(0, 4).map((r) => `<div><span class="tm">${timeStr(r.at)}</span>${esc(r.text.slice(0, 80))}</div>`).join('') + (rows.length > 4 ? '<div>…</div>' : '');
+}
+function openPaste() {
+  if (!S.lec) return;
+  const ss = sessions(), cur = openSession() || ss[ss.length - 1];
+  $('#pasteSess').innerHTML = ss.length ? ss.map((s) => `<option value="${esc(s.id)}" ${cur && s.id === cur.id ? 'selected' : ''}>${esc(s.name)}（${hm(s.start)}〜）</option>`).join('') : '<option value="">セッション外</option>';
+  $('#pasteBase').value = timeStr(cur ? cur.start : Date.now());
+  renderPastePreview();
+  $('#pasteModal').hidden = false; $('#pasteText').focus();
+}
+async function doPaste() {
+  const { rows } = pastePlan();
+  if (!rows.length) { toast('取り込む文がありません。トランスクリプトを貼り付けてください'); return; }
+  try {
+    const r = await store.importTranscript(S.lec.id, rows, $('#pasteReplace').checked ? $('#pasteSess').value : undefined);
+    if (r.removed) { const sid = $('#pasteSess').value; S.transcript = S.transcript.filter((t) => !(t.source === 'import' && t.sessionId === sid)); }
+    S.transcript.push(...r.rows); S.transcript.sort((a, b) => a.at - b.at);
+    $('#pasteModal').hidden = true; $('#pasteText').value = ''; $('#pasteFile').value = '';
+    renderTranscript(); markChanged(); if (S.tab === 'vSum') renderSummary();
+    toast(`${r.rows.length}行を取り込みました${r.removed ? `（前の${r.removed}行を置きかえ）` : ''}`);
+  } catch (e) { toast('取り込めませんでした：' + errMsg(e)); }
+}
+['#pasteText', '#pasteOrder', '#pasteSess', '#pasteBase'].forEach((id) => $(id).addEventListener('input', renderPastePreview));
+$('#pasteSess').addEventListener('change', () => { const s = sessions().find((x) => x.id === $('#pasteSess').value); if (s) $('#pasteBase').value = timeStr(s.start); renderPastePreview(); });
+$('#pasteFile').addEventListener('change', async (e) => { const f = e.target.files[0]; if (!f) return; $('#pasteText').value = await f.text(); renderPastePreview(); });
+
 /* 範囲を決める：共有した画面の上をドラッグする */
 let regionDrag = null;
 function openRegion() {
@@ -523,7 +571,7 @@ function tick() {
 }
 setInterval(() => { if (S.lec && S.tab === 'vLive') tick(); }, 1000);
 
-const tlineHtml = (t) => `<div class="tline"><span class="tm">${hms(t.at)}</span><span class="tx">${esc(t.text)}</span></div>`;
+const tlineHtml = (t) => `<div class="tline${t.source === 'import' ? ' imp' : ''}"${t.source === 'import' ? ' title="貼り付けて取り込んだ文字"' : ''}><span class="tm">${hms(t.at)}</span><span class="tx">${esc(t.text)}</span></div>`;
 function renderTranscript() {
   const list = $('#tList');
   const live = S.transcript.filter((t) => t.source !== 'hq');
@@ -617,9 +665,12 @@ $('#txClose').addEventListener('click', () => setView({ tx: false }));
 $('#txOpen').addEventListener('click', () => { setView({ tx: true }); scrollBottom('#tScroll'); });
 
 /* ============================== まとめ・出力 ============================== */
+// 文字起こしは、清書 ＞ 取り込み ＞ 速報 の順に、あるものを使う
 function sessionText(s) {
-  const hq = S.transcript.filter((t) => t.sessionId === s.id && t.source === 'hq');
-  return { kind: hq.length ? '清書' : '速報', lines: hq.length ? hq : S.transcript.filter((t) => t.sessionId === s.id && t.source !== 'hq') };
+  const of = (src) => S.transcript.filter((t) => t.sessionId === s.id && t.source === src);
+  const hq = of('hq'); if (hq.length) return { kind: '清書', lines: hq };
+  const im = of('import'); if (im.length) return { kind: '取り込み', lines: im };
+  return { kind: '速報', lines: S.transcript.filter((t) => t.sessionId === s.id && !['hq', 'import'].includes(t.source)) };
 }
 function renderSummary() {
   const ss = sessions();
@@ -930,6 +981,8 @@ document.addEventListener('click', async (e) => {
     case 'nudge-close': $('#nudge').hidden = true; break;
     case 'share': Screen.stream ? Screen.stop() : Screen.start(); break;
     case 'shot': Screen.shot(false); break;
+    case 'paste': openPaste(); break;
+    case 'paste-ok': doPaste(); break;
     case 'region': openRegion(); break;
     case 'region-ok': saveRegion(regionDrag && regionDrag.r); break;
     case 'region-all': saveRegion(null); break;

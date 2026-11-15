@@ -117,6 +117,26 @@ await step('広く表示・文字起こしをたたむ（開き直しても保�
   if (!(await p.isVisible('#metaBox')) || !(await p.isVisible('#tScroll'))) throw new Error('元に戻せない');
   if (await p.evaluate(() => !!document.querySelector('header #ctrl'))) throw new Error('セッション操作が元の場所に戻らない');
 });
+await step('トランスクリプトを貼り付けて、講義の時刻に直して取り込める（置きかえもできる）', async () => {
+  await p.click('[data-tab="vLive"]');
+  await p.click('[data-act="paste"]');
+  await p.waitForSelector('#pasteModal:not([hidden])');
+  await p.fill('#pasteBase', '10:00:00');
+  await p.fill('#pasteText', '0:05\n地球の内部は\n層に分かれています\n1:02:03\n終わります');
+  await p.waitForSelector('#pastePreview:has-text("10:00:05")');
+  await p.click('[data-act="paste-ok"]');
+  await p.waitForSelector('#tList .tline.imp');
+  const got = await p.$$eval('#tList .tline.imp', (els) => els.map((e) => e.textContent));
+  if (!got.some((t) => t.includes('10:00:05') && t.includes('地球の内部は層に分かれています'))) throw new Error('時刻か文がちがう：' + got.join(' / '));
+  if (!got.some((t) => t.includes('11:02:03'))) throw new Error('1時間をこえる時刻が読めない：' + got.join(' / '));
+  await p.click('[data-act="paste"]');
+  await p.fill('#pasteBase', '10:00:00');
+  await p.fill('#pasteText', 'WEBVTT\n\n00:00:10.000 --> 00:00:12.000\n<v 講師>こんにちは');
+  await p.click('[data-act="paste-ok"]');
+  await p.waitForSelector('#tList .tline.imp:has-text("講師: こんにちは")');
+  const n = await p.$$eval('#tList .tline.imp', (els) => els.length);
+  if (n !== 1) throw new Error('前に取り込んだ文字が置きかわらない（' + n + '行）');
+});
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
   await p.waitForSelector('#installModal:not([hidden]) .step.here');

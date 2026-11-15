@@ -95,6 +95,24 @@ export async function addTranscript(lectureId, row) {
   return r;
 }
 
+// 貼り付けた文字起こしをまとめて入れる。replaceSessionId を渡すと、そのセッションに前に取り込んだものを消してから入れる
+export async function importTranscript(lectureId, rows, replaceSessionId) {
+  return tx(['transcript'], 'readwrite', async (t) => {
+    const st = t.objectStore('transcript');
+    let removed = 0;
+    if (replaceSessionId !== undefined) {
+      const old = await done(st.index('lectureId').getAll(lectureId));
+      for (const r of old) if (r.source === 'import' && r.sessionId === replaceSessionId) { st.delete(r.key); removed++; }
+    }
+    const out = [];
+    for (const row of rows) {
+      const r = { lectureId, sessionId: row.sessionId || '', at: row.at, text: row.text, source: 'import', audioId: '' };
+      r.key = await done(st.add(r)); out.push(r);
+    }
+    return { rows: out, removed };
+  });
+}
+
 /* ---------- メモ・写真 ---------- */
 export async function addMemo(lectureId, memo) {
   if (memo.id && !memo.imageId) { const dup = await tx(['memos'], 'readonly', (t) => done(t.objectStore('memos').get(memo.id))); if (dup) return dup; }
