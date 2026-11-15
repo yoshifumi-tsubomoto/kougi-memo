@@ -148,10 +148,14 @@ await step('文字起こしの方法で「このPCのAI」を選ぶと、録音�
   await p.click('#settingsBtn');
   await p.check('input[name="liveEngine"][value="whisper"]');
   if (!(await p.isVisible('#whisperRow'))) throw new Error('AIの大きさの欄が出ない');
+  await p.click('[data-act="level-test"]');
+  await p.waitForFunction(() => { const e = document.querySelector('#lvlTest'); return !e.hidden && parseFloat(e.firstElementChild.style.width) > 0; }, null, { timeout: 5000 });
   await p.click('#settings [data-close]');
   await p.evaluate(() => localStorage.setItem('whisperModel', JSON.stringify('fake')));   // テスト用：AIの代わりに音声の長さを返す
   await p.click('[data-tab="vLive"]');
   await p.click('[data-act="start"]');
+  await p.waitForSelector('#lvl:not([hidden])');
+  await p.waitForFunction(() => parseFloat(document.querySelector('#lvl i').style.width) > 0, null, { timeout: 5000 });   // 音の大きさのゲージが動く
   await p.waitForSelector('#tList .tline:has-text("（試験）")', { timeout: 40000 });
   if (!(await p.textContent('#tSpeech')).includes('PCのAI')) throw new Error('状態の表示がちがう：' + await p.textContent('#tSpeech'));
   await p.click('[data-act="end"]');

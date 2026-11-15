@@ -206,6 +206,7 @@ const Rec = {
     if (!this.stream) { setInd('Rec', 'warn', '録音 マイクが使えません'); return; }
     this.mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
     this.active = true; this.begin();
+    recMeter.start(this.stream, $('#lvl'));
   },
   async begin() {
     const s = openSession(); if (!s || !this.stream) return;
@@ -232,9 +233,52 @@ const Rec = {
     this.active = false; clearTimeout(this.timer);
     if (this.mr && this.mr.state !== 'inactive') this.mr.stop();
     if (this.stream) { this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
-    this.count = 0; setInd('Rec', '', '録音 停止');
+    this.count = 0; setInd('Rec', '', '録音 停止'); recMeter.stop();
   },
 };
+
+/* ============================== 音の大きさのゲージ ==============================
+ * 入ってくる音の大きさを、動く棒で見せる。小さすぎると文字起こしが聞き取れない */
+function meter() {
+  let ctx = null, raf = 0, el = null, lv = 0, quietSince = 0;
+  return {
+    start(stream, box) {
+      this.stop();
+      const t = stream && stream.getAudioTracks()[0]; if (!t || !box) return;
+      el = box; el.hidden = false;
+      ctx = new AudioContext();
+      const an = ctx.createAnalyser(); an.fftSize = 1024;
+      ctx.createMediaStreamSource(new MediaStream([t])).connect(an);
+      const buf = new Float32Array(an.fftSize); quietSince = Date.now();
+      const loop = () => {
+        an.getFloatTimeDomainData(buf);
+        let p = 0; for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i]); if (v > p) p = v; }
+        const db = 20 * Math.log10(p || 1e-6);                 // -60dB〜0dB を 0〜100% に
+        const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100));
+        lv = pct > lv ? pct : lv * 0.9 + pct * 0.1;            // 上がるのは速く、下がるのはゆっくり
+        if (pct > 25) quietSince = Date.now();
+        const quiet = Date.now() - quietSince > 8000;
+        el.firstElementChild.style.width = lv.toFixed(0) + '%';
+        el.className = 'lvl' + (db > -3 ? ' clip' : db > -12 ? ' hot' : '') + (quiet ? ' quiet' : '');
+        el.title = quiet ? '音が小さいか、入っていません（音量や、音声の入力を確かめてください）' : `入力の大きさ ${db.toFixed(0)}dB`;
+        raf = requestAnimationFrame(loop);
+      };
+      loop();
+    },
+    stop() { cancelAnimationFrame(raf); raf = 0; try { ctx && ctx.close(); } catch { /* 閉じている */ } ctx = null; if (el) { el.firstElementChild.style.width = '0%'; el.hidden = true; } },
+  };
+}
+const recMeter = meter(), testMeter = meter();
+let testStream = null, testT = 0;
+// ⚙ 設定で「音を確かめる」：選んだ音声の入力を15秒だけ開いて、ゲージを動かす
+async function testLevel() {
+  clearTimeout(testT);
+  if (testStream) { testStream.getTracks().forEach((t) => t.stop()); testStream = null; }
+  const s = Rec.stream || (testStream = await openAudioSource());
+  if (!s) return;
+  testMeter.start(s, $('#lvlTest'));
+  testT = setTimeout(() => { testMeter.stop(); if (testStream) { testStream.getTracks().forEach((t) => t.stop()); testStream = null; } }, 15000);
+}
 
 /* ============================== 音声の入力（音源の選択） ==============================
  * ''      … いつものマイク（ブラウザの既定）
@@ -1061,6 +1105,7 @@ document.addEventListener('click', async (e) => {
     case 'region-ok': saveRegion(regionDrag && regionDrag.r); break;
     case 'region-all': saveRegion(null); break;
     case 'share-stop': Screen.stop(); break;
+    case 'level-test': testLevel(); break;
     case 'audio-refresh':
       try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop()); } catch { /* 許可されなかった */ }
       renderAudioIn(); break;
