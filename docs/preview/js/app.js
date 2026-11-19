@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.9.0 試験2e73802';
+export const APP_VERSION = '0.9.0 試験a43f942';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -1060,7 +1060,7 @@ async function openSettings() {
 }
 
 /* 清書・要約の方法ごとの設定（APIキー・モデル）。清書か要約で使うサービスの欄だけを出す */
-const keyField = (id, label, ph) => `<label class="small">${label} の APIキー <input type="password" id="${id}" autocomplete="off" placeholder="${ph}" value="${esc(ls(id) || '')}"></label>`;
+const keyField = (id, label, ph) => `<label class="small">${label} の APIキー <input type="password" id="${id}" autocomplete="off" placeholder="${ph}" value="${esc(ls(id) || '')}"> <span class="keyok" data-keyok="${id}">${ls(id) ? '✓ 保存済み' : ''}</span></label>`;
 function renderEngineOpts() {
   const se = seiEngine(), me = sumEngine(), used = new Set([se, me]), box = $('#engineOpts');
   const parts = [];
@@ -1074,12 +1074,13 @@ function renderEngineOpts() {
   if (used.has('claude')) parts.push(`${keyField('claudeKey', 'Claude', 'sk-ant-…')}
     <label class="small">要約のモデル <input id="claudeModel" value="${esc(ls('claudeModel') || CLAUDE_DEFAULT)}" style="width:14em"></label>
     <p class="small muted">Claude は要約だけに使えます（音声の文字起こしはできません）。キーは Claude Console（platform.claude.com）で作ります。</p>`);
-  box.innerHTML = parts.join('') + (parts.length ? '<p class="small muted">キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。</p>' : '');
+  box.innerHTML = parts.join('') + (parts.length ? '<p class="small muted">キーはこのブラウザの中にだけ保存します。方法を切り替えても、入れたキーは消えずに残ります。共用のPCでは入れないでください。</p>' : '');
   $('#sumEngines').innerHTML = SUM_ENGINES.map((x) => `<label><input type="radio" name="sumEngine" value="${x.k}" ${me === x.k ? 'checked' : ''}><span>${x.label}<small>${x.note}</small></span></label>`).join('');
 }
 document.addEventListener('input', (e) => {
   const id = e.target.id;
   if (['openaiKey', 'geminiKey', 'geminiModel', 'openaiSumModel', 'claudeKey', 'claudeModel'].includes(id)) ls(id, e.target.value.trim() || null);
+  const ok = document.querySelector(`[data-keyok="${id}"]`); if (ok) ok.textContent = e.target.value.trim() ? '✓ 保存済み' : '';
 });
 
 /* 前の版で「このPCのAI」を使ったときにダウンロードしたAIのデータが残っていれば、消せるようにする */
