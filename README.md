@@ -83,6 +83,8 @@ GitHub（アプリのプログラムを配るだけ）
 
 ②③を使うときは、学校や職場の決まりを確かめてください。APIキーは、そのブラウザの中にだけ保存します。
 
+要約は、「⚙ 設定」の「要約の方法」で、コピーして自分でAIに貼るか、OpenAI・Gemini・Claude で自動で作るかを選べます（Claude は要約だけに使えます）。
+
 ## 要望・不具合の連絡
 
 - **どなたでも**：[要望・不具合の連絡フォーム](https://docs.google.com/forms/d/e/1FAIpQLSd9N9QK0rY9jTGNF2HcpDyVbXDLzyhA-qtZ2tM7VUrqhZBQEg/viewform?usp=pp_url&entry.1742015823=%E3%82%A2%E3%83%97%E3%83%AA%E3%81%AE%E8%A6%81%E6%9C%9B%E3%83%BB%E4%B8%8D%E5%85%B7%E5%90%88&entry.781158365=%E8%AC%9B%E7%BE%A9%E3%83%A1%E3%83%A2)（Google フォーム。アカウントはいりません。作者だけが読みます）

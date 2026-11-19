@@ -3,9 +3,9 @@ import * as store from './store.js';
 import { resizeImage, exifTime } from './media.js';
 import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
-import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT } from './seisho.js';
+import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.8.0';
+export const APP_VERSION = '0.9.0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -837,10 +837,10 @@ function renderSummary() {
       ${seishoRow(s, au)}
       <div class="sumrow">
         <label>要約の文字数 <input type="number" min="50" step="50" value="${sum.chars || 400}" data-chars="${esc(s.id)}"> 字</label>
-        ${seiEngine() !== 'none' ? `<button class="btn primary" type="button" data-act="autosum" data-sid="${esc(s.id)}">✨ 要約を作る（${ENGINE_NAME[seiEngine()]}）</button>` : ''}
-        <button class="btn ${seiEngine() !== 'none' ? '' : 'primary'}" type="button" data-act="prompt" data-sid="${esc(s.id)}">要約用にコピー</button>
+        ${sumEngine() !== 'copy' ? `<button class="btn primary" type="button" data-act="autosum" data-sid="${esc(s.id)}">✨ 要約を作る（${ENGINE_NAME[sumEngine()]}）</button>` : ''}
+        <button class="btn ${sumEngine() !== 'copy' ? '' : 'primary'}" type="button" data-act="prompt" data-sid="${esc(s.id)}">要約用にコピー</button>
       </div>
-      <p class="note">${seiEngine() !== 'none' ? `「✨ 要約を作る」で、清書と同じ ${ENGINE_NAME[seiEngine()]} の APIキーを使って要約を作り、下に保存します。` : ''}「要約用にコピー」で、使ってよいAI（学校のGeminiなど）に貼り付けて要約させることもできます。</p>
+      <p class="note">${sumEngine() !== 'copy' ? `「✨ 要約を作る」で、${ENGINE_NAME[sumEngine()]} の APIキーを使って要約を作り、下に保存します。` : ''}「要約用にコピー」で、使ってよいAI（学校のGeminiなど）に貼り付けて要約させることもできます。要約の方法は ⚙ 設定で選べます。</p>
       <textarea data-sum="${esc(s.id)}" placeholder="ここに要約を貼り付け（自分で書いてもかまいません）">${esc(sum.text || '')}</textarea>
       <div class="sumrow"><button class="btn" type="button" data-act="savesum" data-sid="${esc(s.id)}">要約を保存</button><span class="small muted">${sum.savedAt ? '保存：' + hm(sum.savedAt) : ''}</span></div>
       ${au.length ? `<details class="audio"><summary>録音を聞く・保存する（${au.length}区切り）</summary><ul class="alist">${au.map((a, i) => `
@@ -1059,21 +1059,27 @@ async function openSettings() {
   $('#settings').hidden = false;
 }
 
-/* 清書の方法ごとの設定（AIの大きさ・APIキー） */
+/* 清書・要約の方法ごとの設定（APIキー・モデル）。清書か要約で使うサービスの欄だけを出す */
+const keyField = (id, label, ph) => `<label class="small">${label} の APIキー <input type="password" id="${id}" autocomplete="off" placeholder="${ph}" value="${esc(ls(id) || '')}"></label>`;
 function renderEngineOpts() {
-  const e = seiEngine(), box = $('#engineOpts');
-  if (e === 'openai') box.innerHTML = `<label class="small">OpenAI の APIキー <input type="password" id="openaiKey" autocomplete="off" placeholder="sk-…" value="${esc(ls('openaiKey') || '')}"></label>
-    <label class="small">モデル <select id="openaiModel" class="mini-sel">${OPENAI_MODELS.map((m) => `<option ${m === (ls('openaiModel') || 'whisper-1') ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
-    <label class="small">要約に使うモデル <input id="openaiSumModel" value="${esc(ls('openaiSumModel') || OPENAI_SUM_DEFAULT)}" style="width:14em"></label>
-    <p class="small muted">文字起こしのモデルの whisper-1 は、細かい時刻が付きます。要約は「まとめ・出力」の「✨ 要約を作る」で作ります。キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。</p>`;
-  else if (e === 'gemini') box.innerHTML = `<label class="small">Gemini の APIキー <input type="password" id="geminiKey" autocomplete="off" placeholder="AIza…" value="${esc(ls('geminiKey') || '')}"></label>
+  const se = seiEngine(), me = sumEngine(), used = new Set([se, me]), box = $('#engineOpts');
+  const parts = [];
+  if (used.has('openai')) parts.push(`${keyField('openaiKey', 'OpenAI', 'sk-…')}
+    ${se === 'openai' ? `<label class="small">清書のモデル <select id="openaiModel" class="mini-sel">${OPENAI_MODELS.map((m) => `<option ${m === (ls('openaiModel') || 'whisper-1') ? 'selected' : ''}>${m}</option>`).join('')}</select></label>` : ''}
+    ${me === 'openai' ? `<label class="small">要約のモデル <input id="openaiSumModel" value="${esc(ls('openaiSumModel') || OPENAI_SUM_DEFAULT)}" style="width:14em"></label>` : ''}
+    <p class="small muted">清書のモデルの whisper-1 は、細かい時刻が付きます。</p>`);
+  if (used.has('gemini')) parts.push(`${keyField('geminiKey', 'Gemini', 'AIza…')}
     <label class="small">モデル <input id="geminiModel" value="${esc(ls('geminiModel') || GEMINI_DEFAULT)}" style="width:14em"></label>
-    <p class="small muted">キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。<b>有料の枠（Google AI Studio で支払いの設定をしたキー）で使ってください。</b>無料の枠では、送った音声が Google の AI の学習に使われることがあります。</p>`;
-  else box.innerHTML = '';
+    <p class="small muted"><b>有料の枠（Google AI Studio で支払いの設定をしたキー）で使ってください。</b>無料の枠では、送った音声や文章が Google の AI の学習に使われることがあります。</p>`);
+  if (used.has('claude')) parts.push(`${keyField('claudeKey', 'Claude', 'sk-ant-…')}
+    <label class="small">要約のモデル <input id="claudeModel" value="${esc(ls('claudeModel') || CLAUDE_DEFAULT)}" style="width:14em"></label>
+    <p class="small muted">Claude は要約だけに使えます（音声の文字起こしはできません）。キーは Claude Console（platform.claude.com）で作ります。</p>`);
+  box.innerHTML = parts.join('') + (parts.length ? '<p class="small muted">キーはこのブラウザの中にだけ保存します。共用のPCでは入れないでください。</p>' : '');
+  $('#sumEngines').innerHTML = SUM_ENGINES.map((x) => `<label><input type="radio" name="sumEngine" value="${x.k}" ${me === x.k ? 'checked' : ''}><span>${x.label}<small>${x.note}</small></span></label>`).join('');
 }
 document.addEventListener('input', (e) => {
   const id = e.target.id;
-  if (['openaiKey', 'geminiKey', 'geminiModel', 'openaiSumModel'].includes(id)) ls(id, e.target.value.trim() || null);
+  if (['openaiKey', 'geminiKey', 'geminiModel', 'openaiSumModel', 'claudeKey', 'claudeModel'].includes(id)) ls(id, e.target.value.trim() || null);
 });
 
 /* 前の版で「このPCのAI」を使ったときにダウンロードしたAIのデータが残っていれば、消せるようにする */
@@ -1089,9 +1095,17 @@ async function deleteOldAI() {
 
 /* 清書を実行する（一度に1つのセッション） */
 let SEI = null;   // { sid, ctrl, state }
-const ENGINE_NAME = { openai: 'OpenAI', gemini: 'Gemini' };
+const ENGINE_NAME = { openai: 'OpenAI', gemini: 'Gemini', claude: 'Claude' };
+// 要約の方法。決めていないときは、清書と同じサービスを使う
+const SUM_ENGINES = [
+  { k: 'copy', label: 'コピーして、自分でAIに貼る', note: '「要約用にコピー」で文章をコピーし、使ってよいAI（学校のGeminiなど）に貼り付けます。APIキーはいりません' },
+  { k: 'openai', label: 'OpenAI で作る', note: '自分のAPIキーで、ボタン1つで要約を作ります（1時間ぶんで1円未満）。文字起こしとメモを OpenAI に送ります' },
+  { k: 'gemini', label: 'Gemini で作る', note: '自分のAPIキー（有料の枠）で作ります。文字起こしとメモを Google に送ります' },
+  { k: 'claude', label: 'Claude で作る', note: '自分のAPIキーで作ります（Haiku なら1時間ぶんで1円未満）。文字起こしとメモを Anthropic に送ります。初期設定では、送った内容は学習に使われません' },
+];
+const sumEngine = () => { const v = ls('sumEngine'); if (v && SUM_ENGINES.some((x) => x.k === v)) return v; const e = seiEngine(); return e === 'none' ? 'copy' : e; };
 // 前の版で選べた「このPCで清書」は、なくなった（選んでいた人は「清書しない」に戻す）
-const seiEngine = () => { const e = ls('engine') || 'none'; return ENGINE_NAME[e] ? e : 'none'; };
+const seiEngine = () => { const e = ls('engine') || 'none'; return ['openai', 'gemini'].includes(e) ? e : 'none'; };
 async function runSeisho(sid) {
   if (SEI) { toast('ほかのセッションを清書しています。終わってから押してください'); return; }
   const engine = seiEngine();
@@ -1182,6 +1196,7 @@ document.addEventListener('drop', (e) => { e.preventDefault(); dragN = 0; $('#dr
 document.addEventListener('change', async (e) => {
   if (e.target.matches('input[data-import]') && e.target.files[0]) { $('#settings').hidden = true; importFile(e.target.files[0]); e.target.value = ''; return; }
   if (e.target.name === 'engine') { ls('engine', e.target.value); renderEngineOpts(); if (S.tab === 'vSum') renderSummary(); return; }
+  if (e.target.name === 'sumEngine') { ls('sumEngine', e.target.value); renderEngineOpts(); if (S.tab === 'vSum') renderSummary(); return; }
   if (e.target.id === 'openaiModel') { ls(e.target.id, e.target.value); return; }
   if (e.target.name === 'look') { setLook(e.target.value); return; }
   if (e.target.id === 'audioIn') { ls('audioIn', e.target.value || null); toast(recording() ? '次のセッションから、この音声の入力を使います' : 'この音声の入力を使います'); return; }
@@ -1215,14 +1230,16 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'autosum': {
-      const engine = seiEngine(); if (engine === 'none') break;
+      const engine = sumEngine(); if (engine === 'copy') break;
       const chars = +document.querySelector(`[data-chars="${sid}"]`).value || 400;
       const box = document.querySelector(`[data-sum="${sid}"]`);
       if (box.value.trim() && !confirm('いま欄にある要約を、新しく作った要約に置きかえます。よろしいですか？')) break;
       if (!confirm(`このセッションの文字起こしとメモを ${ENGINE_NAME[engine]} に送って、要約を作ります。よろしいですか？`)) break;
       b.disabled = true; const label = b.textContent; b.textContent = '要約を作っています…';
       try {
-        const opts = engine === 'openai' ? { key: ls('openaiKey'), model: ls('openaiSumModel') || OPENAI_SUM_DEFAULT } : { key: ls('geminiKey'), model: ls('geminiModel') || GEMINI_DEFAULT };
+        const opts = engine === 'openai' ? { key: ls('openaiKey'), model: ls('openaiSumModel') || OPENAI_SUM_DEFAULT }
+          : engine === 'claude' ? { key: ls('claudeKey'), model: ls('claudeModel') || CLAUDE_DEFAULT }
+            : { key: ls('geminiKey'), model: ls('geminiModel') || GEMINI_DEFAULT };
         const text = cleanSummary(await summarize(buildPrompt(s, chars), { engine, ...opts }));
         if (!text) throw new Error('要約が返ってきませんでした');
         box.value = text;
