@@ -188,6 +188,27 @@ await step('清書（OpenAI）で録音を文字にし直し、清書が済ん�
   await p.unroute('https://api.openai.com/v1/audio/transcriptions');
   await p.evaluate(() => { localStorage.removeItem('engine'); localStorage.removeItem('openaiKey'); });
 });
+await step('要約の方法で Claude を選び、清書しなくても要約を作れる', async () => {
+  let body = null;
+  await p.route('https://api.anthropic.com/v1/messages', (r) => { body = r.request().postDataJSON(); r.fulfill({ contentType: 'application/json', body: JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'text', text: '## 要旨\nClaude の要約です' }] }) }); });
+  await p.click('#settingsBtn');
+  await p.check('input[name="sumEngine"][value="claude"]');
+  await p.fill('#claudeKey', 'sk-ant-test');
+  if (await p.isVisible('#openaiKey')) throw new Error('使わないサービスのキーの欄が出る');
+  // 方法を切り替えて戻しても、入れたキーは残る
+  await p.check('input[name="sumEngine"][value="copy"]');
+  await p.check('input[name="sumEngine"][value="claude"]');
+  if ((await p.inputValue('#claudeKey')) !== 'sk-ant-test' || !(await p.textContent('[data-keyok="claudeKey"]')).includes('保存済み')) throw new Error('切り替えるとキーが消える');
+  await p.click('#settings [data-close]');
+  await p.click('[data-tab="vSum"]');
+  const accept = (d) => d.accept(); p.on('dialog', accept);
+  await p.locator('[data-act="autosum"]').first().click();
+  await p.waitForFunction(() => [...document.querySelectorAll('textarea[data-sum]')].some((t) => t.value.includes('Claude の要約です')), null, { timeout: 5000 });
+  p.off('dialog', accept);
+  if (!body || body.model !== 'claude-haiku-5-5') throw new Error('Claude に送る内容がちがう：' + JSON.stringify(body && body.model));
+  await p.unroute('https://api.anthropic.com/v1/messages');
+  await p.evaluate(() => { localStorage.removeItem('sumEngine'); localStorage.removeItem('claudeKey'); });
+});
 await step('要約に付いた ** や # の記号を、保存するときに取る', async () => {
   await p.click('[data-tab="vSum"]');
   const box = p.locator('textarea[data-sum]').first();

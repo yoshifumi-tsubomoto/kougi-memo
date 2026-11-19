@@ -7,6 +7,7 @@ import { parseTranscript } from './transcript.js';
 export const OPENAI_MODELS = ['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'];
 export const GEMINI_DEFAULT = 'gemini-2.5-flash';
 export const OPENAI_SUM_DEFAULT = 'gpt-4o-mini';
+export const CLAUDE_DEFAULT = 'claude-haiku-5-5';
 
 // 同じ言葉が何回も続いたら、2回までに縮める（「なんか、なんか、なんか、…」）。ほとんどがくり返しなら、その行は捨てる
 function squash(t) {
@@ -87,6 +88,18 @@ export async function summarize(prompt, { engine, key, model }) {
     if (!res.ok) throw new Error(`OpenAI：${res.status} ${(await res.text()).slice(0, 200)}`);
     const j = await res.json();
     return String(j.choices?.[0]?.message?.content || '').trim();
+  }
+  if (engine === 'claude') {
+    // Claude（Anthropic）の Messages API。ブラウザから直接呼ぶので、そのための見出しを付ける
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] }),
+    });
+    if (!res.ok) throw new Error(`Claude：${res.status} ${(await res.text()).slice(0, 200)}`);
+    const j = await res.json();
+    if (j.stop_reason === 'refusal') throw new Error('Claude が要約を断りました');
+    return (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
   }
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
