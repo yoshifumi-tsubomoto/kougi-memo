@@ -349,3 +349,7 @@ body.focus .ind .lvl{display:inline-block;width:36px}
 #speechInd:hover{border-color:var(--teal)}
 #speechInd .redo{font-weight:700;color:var(--teal);font-size:12px;margin-left:2px}
 #speechInd .redo{order:1}
+.stall{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 8px;padding:8px 12px;border-radius:12px;background:#fff1d6;border:1.5px solid #e0a000;color:#7a4b00;font-weight:700;font-size:14px;animation:stallblink 1.2s ease-in-out infinite alternate}
+.stall .small{font-weight:400}
+@keyframes stallblink{from{box-shadow:0 0 0 0 rgba(224,160,0,.0)}to{box-shadow:0 0 0 4px rgba(224,160,0,.35)}}
+@media (prefers-reduced-motion:reduce){.stall{animation:none}}
