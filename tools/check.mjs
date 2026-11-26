@@ -163,7 +163,7 @@ await step('入力の大きさを変え、音の大きさのゲージで確か�
 await step('清書（OpenAI）で録音を文字にし直し、清書が済んだ録音を消せる', async () => {
   // OpenAI の代わりに、手元で決まった答えを返す（キーや通信は使わない）
   let sent = 0;
-  await p.route('https://api.openai.com/v1/audio/transcriptions', (r) => { sent++; r.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: '清書の試験', segments: [{ start: 0, text: '清書の試験です。' }, { start: 2, text: 'つづきです。' }] }) }); });
+  await p.route('https://api.openai.com/v1/audio/transcriptions', async (r) => { sent++; await new Promise((ok) => setTimeout(ok, 1500)); r.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: '清書の試験', segments: [{ start: 0, text: '清書の試験です。' }, { start: 2, text: 'つづきです。' }] }) }); });
   await p.click('#settingsBtn');
   await p.check('input[name="engine"][value="openai"]');
   await p.fill('#openaiKey', 'sk-test');
@@ -182,6 +182,20 @@ await step('清書（OpenAI）で録音を文字にし直し、清書が済ん�
   const accept = (d) => d.accept(); p.on('dialog', accept);
   await p.locator('[data-act="autosum"]').last().click();
   await p.waitForFunction(() => [...document.querySelectorAll('textarea[data-sum]')].some((t) => t.value.includes('・清書の試験の要約')), null, { timeout: 5000 });
+  // まだのセッションを、まとめて清書・要約する（録音のある新しいセッションを1つ作ってから）
+  await p.click('[data-tab="vLive"]'); await p.click('[data-act="start"]'); await p.waitForTimeout(2500); await p.click('[data-act="end"]');
+  await p.waitForTimeout(800); await p.click('[data-tab="vSum"]');
+  await p.waitForSelector('[data-act="seisho-all"]');
+  await p.click('[data-act="seisho-all"]');
+  // 清書の途中で「まとめて要約」を押すと、清書が終わってから作る
+  await p.click('[data-act="sum-all"]');
+  await p.waitForSelector('.seisho:has-text("清書が終わったら、要約を作ります")', { timeout: 3000 });
+  await p.waitForFunction(() => /件のセッションを清書しました|要約を作りました/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
+  await p.waitForFunction(() => /件のセッションの要約を作りました/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
+  const sumByTime = await p.evaluate(() => [...document.querySelectorAll('textarea[data-sum]')].filter((t) => t.value.includes('清書の試験の要約')).length);
+  if (!sumByTime) throw new Error('清書のあとに要約が作られない');
+  if (await p.$('[data-act="seisho-all"]')) throw new Error('まとめて清書したあとも、まだのセッションが残る');
+  if (await p.$('[data-act="sum-all"]')) throw new Error('まとめて要約したあとも、まだのセッションが残る');
   p.off('dialog', accept);
   if ((await p.locator('textarea[data-sum]').last().inputValue()).includes('**')) throw new Error('要約に記号が残る');
   await p.unroute('https://api.openai.com/v1/chat/completions');
@@ -245,14 +259,15 @@ await step('講義の一覧で、名前を変え、中身のない講義をま�
   await p.waitForSelector('#lecModal', { state: 'hidden' });
   await p.waitForSelector('#metaBox:not([hidden])');
 });
-await step('前の版で保存した設定を、新しい名前（kougi.）へ移して読める', async () => {
+await step('前の版で保存した設定を、新しい名前（kougi.）へ写して読める（元も残す）', async () => {
   await p.evaluate(() => localStorage.setItem('pasteOrder', JSON.stringify('after')));
   await p.reload(); await p.waitForSelector('#lecSel');
   await p.click('[data-tab="vLive"]').catch(() => {});
   await p.click('[data-act="paste"]');
   if ((await p.inputValue('#pasteOrder')) !== 'after') throw new Error('前の設定が読めない');
   const moved = await p.evaluate(() => [localStorage.getItem('pasteOrder'), localStorage.getItem('kougi.pasteOrder')]);
-  if (moved[0] !== null || moved[1] !== '"after"') throw new Error('新しい名前に移らない：' + moved);
+  if (moved[1] !== '"after"') throw new Error('新しい名前に写らない：' + moved);
+  if (moved[0] === null) throw new Error('前の版のための元の設定まで消えている');
   await p.click('#pasteModal [data-close]');
 });
 await step('「音声」の点を押すと、音声認識を開き直せる（セッション中だけ）', async () => {

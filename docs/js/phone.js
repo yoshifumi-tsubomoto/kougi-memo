@@ -7,7 +7,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const pad = (n) => String(n).padStart(2, '0');
 const hms = (ms) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
 const newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const TYPES = [{ k: 'memo', l: 'メモ' }, { k: 'key', l: '要点' }, { k: 'q', l: '質問' }, { k: 'todo', l: 'TODO' }];
+const TYPES = [{ k: 'memo', l: 'メモ' }, { k: 'key', l: '要点' }, { k: 'q', l: '疑問・質問' }, { k: 'todo', l: 'TODO' }];
 
 const hostId = decodeURIComponent(location.hash.slice(1));
 const items = [];        // 送ったもの（送れていないものは、つながり直したときに送り直す）
