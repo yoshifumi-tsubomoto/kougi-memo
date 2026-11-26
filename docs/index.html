@@ -23,6 +23,7 @@
     <span class="brand"><span class="mark" aria-hidden="true">Km</span><span class="brand-text"><strong>講義メモ</strong><small>Tsubomoto Lab.</small></span></span>
     <select id="lecSel" aria-label="講義を選ぶ"></select>
     <button class="btn ghost icon" id="renameBtn" type="button" title="講義の名前を変える" aria-label="講義の名前を変える" hidden>✎</button>
+    <button class="btn ghost icon" id="lecListBtn" type="button" title="講義の一覧（名前の変更・削除）" aria-label="講義の一覧" hidden>📂</button>
     <button class="btn" id="newBtn" type="button" title="新しい講義">＋<span class="lbl"> 新しい講義</span></button>
     <span class="slot" id="focusSlot"></span>
     <span class="sp"></span>
@@ -164,6 +165,14 @@
     <p class="small">共有した画面の上を、スライドの部分だけドラッグして囲んでください。</p>
     <canvas id="regionCanvas" class="regioncv"></canvas>
     <div class="sumrow"><button class="btn primary" type="button" data-act="region-ok">この範囲にする</button><button class="btn" type="button" data-act="region-all">画面全体を撮る</button><button class="btn ghost" type="button" data-close>やめる</button></div>
+  </div>
+</div>
+<div class="modal" id="lecModal" hidden>
+  <div class="box wide">
+    <h3>講義の一覧</h3>
+    <p class="small">講義を開く・名前を変える・削除することができます。削除した講義は元に戻せないので、残したい講義は先に「まとめ・出力」から書き出してください。</p>
+    <ul class="leclist" id="lecList"></ul>
+    <div class="sumrow"><button class="btn ghost danger" type="button" data-act="del-empty" id="delEmptyBtn" hidden></button><span class="sp"></span><button class="btn" type="button" data-close>閉じる</button></div>
   </div>
 </div>
 <div class="modal" id="pasteModal" hidden>
