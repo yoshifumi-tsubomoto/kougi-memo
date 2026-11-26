@@ -182,6 +182,16 @@ await step('清書（OpenAI）で録音を文字にし直し、清書が済ん�
   const accept = (d) => d.accept(); p.on('dialog', accept);
   await p.locator('[data-act="autosum"]').last().click();
   await p.waitForFunction(() => [...document.querySelectorAll('textarea[data-sum]')].some((t) => t.value.includes('・清書の試験の要約')), null, { timeout: 5000 });
+  // まだのセッションを、まとめて清書・要約する（録音のある新しいセッションを1つ作ってから）
+  await p.click('[data-tab="vLive"]'); await p.click('[data-act="start"]'); await p.waitForTimeout(2500); await p.click('[data-act="end"]');
+  await p.waitForTimeout(800); await p.click('[data-tab="vSum"]');
+  await p.waitForSelector('[data-act="seisho-all"]');
+  await p.click('[data-act="seisho-all"]');
+  await p.waitForFunction(() => /件のセッションを清書しました/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
+  if (await p.$('[data-act="seisho-all"]')) throw new Error('まとめて清書したあとも、まだのセッションが残る');
+  await p.click('[data-act="sum-all"]');
+  await p.waitForFunction(() => /件のセッションの要約を作りました/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
+  if (await p.$('[data-act="sum-all"]')) throw new Error('まとめて要約したあとも、まだのセッションが残る');
   p.off('dialog', accept);
   if ((await p.locator('textarea[data-sum]').last().inputValue()).includes('**')) throw new Error('要約に記号が残る');
   await p.unroute('https://api.openai.com/v1/chat/completions');
