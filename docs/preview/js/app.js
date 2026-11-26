@@ -5,14 +5,14 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.10.2 試験5beb162';
+export const APP_VERSION = '0.10.3 試験5025488';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
 const CHUNK_MS = TEST ? 4000 : 10 * 60 * 1000;   // 録音を区切る長さ
 const PART_MS = TEST ? 1000 : 60 * 1000;         // この間隔で録音をブラウザに書き込む
 const TYPES = [
-  { k: 'memo', label: 'メモ' }, { k: 'key', label: '要点' }, { k: 'q', label: '質問' },
+  { k: 'memo', label: 'メモ' }, { k: 'key', label: '要点' }, { k: 'q', label: '疑問・質問' },
   { k: 'todo', label: 'TODO' }, { k: 'quote', label: '引用' }];
 const LOOKS = [
   { k: 'aurora', label: 'オーロラ', note: 'ミント×ラベンダー' },
@@ -26,7 +26,7 @@ function setLook(k) {
   try { localStorage.setItem('kougi-look', k); } catch { /* 保存できなくても見た目は変わる */ }
   sendInfo();   // つながっているスマホも同じデザインにする
 }
-const TAGS = { key: '要点', q: '質問', todo: 'TODO', quote: '引用', photo: '写真' };
+const TAGS = { key: '要点', q: '疑問・質問', todo: 'TODO', quote: '引用', photo: '写真' };
 const ENGINES = [
   { k: 'none', label: '① 清書しない（リアルタイムの速報だけ）', note: '設定はいりません', ready: true },
   { k: 'openai', label: '② OpenAI で清書する', note: '自分のAPIキーが必要です（料金がかかります）。録音の音声を OpenAI に送ります', ready: true },
@@ -921,7 +921,7 @@ function buildPrompt(s, chars) {
     '',
     `【お願い】この内容を日本語で${chars}字程度に要約してください。`,
     '・最初に要旨、続けて重要なポイントを箇条書き',
-    '・聞き手のメモの【要点】【質問】【TODO】は優先して反映',
+    '・聞き手のメモの【要点】【疑問・質問】【TODO】は優先して反映',
     '・文字起こしにない内容は付け足さない',
     '・** や # などの記号（Markdown）は使わず、普通の文章で書く。箇条書きは「・」を使う',
     '',
