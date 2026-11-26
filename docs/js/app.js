@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.10.1';
+export const APP_VERSION = '0.10.2';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -143,11 +143,18 @@ const Live = {
     // 見張り：録音には声が入っているのに、音声認識から文字が25秒以上届かないときは、音声認識を開き直す
     // （ブラウザの音声認識は、エラーも出さずに黙って止まることがある）
     clearInterval(this.watch);
+    // 声が入っているのに10秒文字が来なければ、目立つ知らせを出す。20秒で自動で開き直す
     this.watch = setInterval(() => {
-      if (!this.running || !this.rec) return;
-      const now = Date.now();
-      if (now - this.heardAt > 25000 && now - recMeter.loudAt < 4000) { this.heardAt = now; this.restart(); }
-    }, 5000);
+      const bar = $('#txStall');
+      if (!this.running) { bar.hidden = true; return; }
+      const now = Date.now(), gap = now - this.heardAt, voice = now - recMeter.loudAt < 3000;
+      if (gap > 10000 && voice) {
+        bar.hidden = false;
+        $('#txStallT').textContent = `文字起こしが ${Math.round(gap / 1000)}秒 止まっています。声は入っています`;
+        setInd('Speech', 'warn', `音声認識 文字が来ていません（${Math.round(gap / 1000)}秒）`);
+        if (gap > 20000 && this.rec) { this.heardAt = now; this.restart(); }
+      } else if (gap < 10000) bar.hidden = true;
+    }, 2000);
   },
   restart() {
     const old = this.rec; this.rec = null;
@@ -162,7 +169,7 @@ const Live = {
     r.lang = 'ja-JP'; r.continuous = true; r.interimResults = true;
     r.onstart = () => { this.lastErr = ''; setInd('Speech', 'on', '音声認識 稼働中'); };
     r.onresult = (e) => {
-      this.heardAt = Date.now();
+      this.heardAt = Date.now(); $('#txStall').hidden = true;
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i], text = res[0].transcript.trim();
@@ -189,7 +196,7 @@ const Live = {
     // （録音の音を渡す方法は、ブラウザによって声が届かず、文字起こしが止まることがあったのでやめた）
     try { r.start(); } catch { if (this.rec === r) this.rec = null; setTimeout(() => { if (this.running) this.open(); }, 1000); }
   },
-  stop() { this.running = false; this.lastErr = ''; clearInterval(this.watch); clearTimeout(this.reopenT); try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
+  stop() { this.running = false; this.lastErr = ''; clearInterval(this.watch); $('#txStall').hidden = true; clearTimeout(this.reopenT); try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
   async push(text, at) {
     const s = sessionAt(at) || openSession();
     const row = await store.addTranscript(S.lec.id, { sessionId: s ? s.id : '', at, text });
@@ -1183,7 +1190,12 @@ async function deleteHqAudio(sid) {
 let wake = null;
 async function keepAwake() { try { if (navigator.wakeLock && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => (wake = null)); } } catch { /* 使えない環境 */ } }
 function releaseWake() { try { wake && wake.release(); } catch { /* 済み */ } wake = null; }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && recording()) keepAwake(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !recording()) return;
+  keepAwake();
+  // ほかの窓やスマホの操作から戻ってきたとき、音声認識がしばらく文字を返していなければ、開き直しておく
+  if (Live.running && Date.now() - Live.heardAt > 10000) Live.restart();
+});
 window.addEventListener('beforeunload', (e) => { if (recording() || SEI) { e.preventDefault(); e.returnValue = ''; } });
 
 /* ============================== 操作 ============================== */
@@ -1191,6 +1203,13 @@ $('#newBtn').addEventListener('click', newLecture);
 $('#newBtn2').addEventListener('click', newLecture);
 $('#lecSel').addEventListener('change', (e) => { if (e.target.value === '__manage') { e.target.value = S.lec ? S.lec.id : ''; openLecList(); return; } openLecture(e.target.value); });
 $('#lecListBtn').addEventListener('click', openLecList);
+// 「音声」の点を押すと、音声認識を手で開き直す（文字起こしが止まったとき用）
+function redoSpeech() {
+  if (!Live.running) { toast('音声認識を開き直せるのは、セッション中だけです'); return; }
+  Live.restart(); toast('音声認識を開き直しました。話し声が入ると、文字起こしが続きます');
+}
+$('#speechInd').addEventListener('click', redoSpeech);
+$('#speechInd').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); redoSpeech(); } });
 
 /* ============================== 講義の一覧（名前の変更・削除・整理） ============================== */
 const isEmptyLec = (l, d) => !(l.title || '').trim() && !(l.sessions || []).length && !d.transcript.length && !d.memos.length && !d.audio.some((a) => a.status !== 'deleted');
@@ -1298,6 +1317,7 @@ document.addEventListener('click', async (e) => {
     case 'next': nextSession(); break;
     case 'end': endSession(); break;
     case 'old-ai': deleteOldAI(); break;
+    case 'redo-speech': redoSpeech(); break;
     case 'lm-open': $('#lecModal').hidden = true; if (!S.lec || S.lec.id !== b.dataset.lid) { await openLecture(b.dataset.lid); $('#lecSel').value = b.dataset.lid; } break;
     case 'lm-rename': lmRename(b.dataset.lid); break;
     case 'lm-del': lmDelete(b.dataset.lid); break;
