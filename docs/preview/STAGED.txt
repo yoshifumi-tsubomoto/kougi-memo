@@ -1,2 +1,2 @@
 branch: capture
-commit: 5025488
+commit: 769c788
