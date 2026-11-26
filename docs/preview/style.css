@@ -345,3 +345,7 @@ body.focus .ind .lvl{display:inline-block;width:36px}
 .leclist .lt small{display:block;color:var(--muted);font-size:12px}
 .leclist .la{display:flex;gap:6px;flex-wrap:wrap}
 @media (max-width:700px){.leclist li{grid-template-columns:1fr}}
+#speechInd{cursor:pointer}
+#speechInd:hover{border-color:var(--teal)}
+#speechInd .redo{font-weight:700;color:var(--teal);font-size:12px;margin-left:2px}
+#speechInd .redo{order:1}

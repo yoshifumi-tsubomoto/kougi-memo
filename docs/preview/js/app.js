@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.10.1 試験7519d6d';
+export const APP_VERSION = '0.10.2 試験b78c97a';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -1191,6 +1191,13 @@ $('#newBtn').addEventListener('click', newLecture);
 $('#newBtn2').addEventListener('click', newLecture);
 $('#lecSel').addEventListener('change', (e) => { if (e.target.value === '__manage') { e.target.value = S.lec ? S.lec.id : ''; openLecList(); return; } openLecture(e.target.value); });
 $('#lecListBtn').addEventListener('click', openLecList);
+// 「音声」の点を押すと、音声認識を手で開き直す（文字起こしが止まったとき用）
+function redoSpeech() {
+  if (!Live.running) { toast('音声認識を開き直せるのは、セッション中だけです'); return; }
+  Live.restart(); toast('音声認識を開き直しました。話し声が入ると、文字起こしが続きます');
+}
+$('#speechInd').addEventListener('click', redoSpeech);
+$('#speechInd').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); redoSpeech(); } });
 
 /* ============================== 講義の一覧（名前の変更・削除・整理） ============================== */
 const isEmptyLec = (l, d) => !(l.title || '').trim() && !(l.sessions || []).length && !d.transcript.length && !d.memos.length && !d.audio.some((a) => a.status !== 'deleted');
