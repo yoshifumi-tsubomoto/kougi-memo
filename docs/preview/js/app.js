@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.10.2 試験b78c97a';
+export const APP_VERSION = '0.10.2 試験8c4581c';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -1183,7 +1183,12 @@ async function deleteHqAudio(sid) {
 let wake = null;
 async function keepAwake() { try { if (navigator.wakeLock && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => (wake = null)); } } catch { /* 使えない環境 */ } }
 function releaseWake() { try { wake && wake.release(); } catch { /* 済み */ } wake = null; }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && recording()) keepAwake(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !recording()) return;
+  keepAwake();
+  // ほかの窓やスマホの操作から戻ってきたとき、音声認識がしばらく文字を返していなければ、開き直しておく
+  if (Live.running && Date.now() - Live.heardAt > 10000) Live.restart();
+});
 window.addEventListener('beforeunload', (e) => { if (recording() || SEI) { e.preventDefault(); e.returnValue = ''; } });
 
 /* ============================== 操作 ============================== */
