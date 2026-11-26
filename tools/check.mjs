@@ -255,6 +255,11 @@ await step('前の版で保存した設定を、新しい名前（kougi.）へ�
   if (moved[0] !== null || moved[1] !== '"after"') throw new Error('新しい名前に移らない：' + moved);
   await p.click('#pasteModal [data-close]');
 });
+await step('「音声」の点を押すと、音声認識を開き直せる（セッション中だけ）', async () => {
+  await p.click('[data-tab="vLive"]');
+  await p.click('#speechInd');
+  await p.waitForFunction(() => document.querySelector('#toast').textContent.includes('セッション中だけ'));
+});
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
   await p.waitForSelector('#installModal:not([hidden]) .step.here');
