@@ -158,7 +158,7 @@ await step('入力の大きさを変え、音の大きさのゲージで確か�
   await p.waitForFunction(() => parseFloat(document.querySelector('#lvl i').style.width) > 0, null, { timeout: 5000 });   // 録音中のゲージが動く
   await p.waitForTimeout(1500);
   await p.click('[data-act="end"]');
-  await p.evaluate(() => localStorage.removeItem('inGainDb'));
+  await p.evaluate(() => localStorage.removeItem('kougi.inGainDb'));
 });
 await step('清書（OpenAI）で録音を文字にし直し、清書が済んだ録音を消せる', async () => {
   // OpenAI の代わりに、手元で決まった答えを返す（キーや通信は使わない）
@@ -186,7 +186,7 @@ await step('清書（OpenAI）で録音を文字にし直し、清書が済ん�
   if ((await p.locator('textarea[data-sum]').last().inputValue()).includes('**')) throw new Error('要約に記号が残る');
   await p.unroute('https://api.openai.com/v1/chat/completions');
   await p.unroute('https://api.openai.com/v1/audio/transcriptions');
-  await p.evaluate(() => { localStorage.removeItem('engine'); localStorage.removeItem('openaiKey'); });
+  await p.evaluate(() => { localStorage.removeItem('kougi.engine'); localStorage.removeItem('kougi.openaiKey'); });
 });
 await step('要約の方法で Claude を選び、清書しなくても要約を作れる', async () => {
   let body = null;
@@ -207,7 +207,7 @@ await step('要約の方法で Claude を選び、清書しなくても要約を
   p.off('dialog', accept);
   if (!body || body.model !== 'claude-haiku-5-5') throw new Error('Claude に送る内容がちがう：' + JSON.stringify(body && body.model));
   await p.unroute('https://api.anthropic.com/v1/messages');
-  await p.evaluate(() => { localStorage.removeItem('sumEngine'); localStorage.removeItem('claudeKey'); });
+  await p.evaluate(() => { localStorage.removeItem('kougi.sumEngine'); localStorage.removeItem('kougi.claudeKey'); });
 });
 await step('要約に付いた ** や # の記号を、保存するときに取る', async () => {
   await p.click('[data-tab="vSum"]');
@@ -227,6 +227,33 @@ await step('上の ✎ で講義の名前を変えられる', async () => {
 await step('右上に版の番号が出る', async () => {
   const v = await p.textContent('#verBadge');
   if (!/^v\d+\.\d+\.\d+/.test(v)) throw new Error('版の番号が出ない：' + v);
+});
+await step('講義の一覧で、名前を変え、中身のない講義をまとめて削除できる', async () => {
+  await p.click('#newBtn'); await p.waitForTimeout(300);   // 中身のない講義を作る
+  await p.click('#lecListBtn');
+  await p.waitForSelector('#lecModal:not([hidden]) #lecList li');
+  p.once('dialog', (d) => d.accept('一覧で名前を変えた'));
+  await p.locator('[data-act="lm-rename"]').last().click();
+  await p.waitForSelector('#lecList li:has-text("一覧で名前を変えた")');
+  const before = await p.locator('#lecList li').count();
+  await p.waitForSelector('#delEmptyBtn:not([hidden])');
+  p.once('dialog', (d) => d.accept());
+  await p.click('#delEmptyBtn');
+  await p.waitForFunction((n) => document.querySelectorAll('#lecList li').length < n, before, { timeout: 5000 });
+  // 開いていた（中身のない）講義が消えたので、一覧から別の講義を開く
+  await p.locator('[data-act="lm-open"]').first().click();
+  await p.waitForSelector('#lecModal', { state: 'hidden' });
+  await p.waitForSelector('#metaBox:not([hidden])');
+});
+await step('前の版で保存した設定を、新しい名前（kougi.）へ移して読める', async () => {
+  await p.evaluate(() => localStorage.setItem('pasteOrder', JSON.stringify('after')));
+  await p.reload(); await p.waitForSelector('#lecSel');
+  await p.click('[data-tab="vLive"]').catch(() => {});
+  await p.click('[data-act="paste"]');
+  if ((await p.inputValue('#pasteOrder')) !== 'after') throw new Error('前の設定が読めない');
+  const moved = await p.evaluate(() => [localStorage.getItem('pasteOrder'), localStorage.getItem('kougi.pasteOrder')]);
+  if (moved[0] !== null || moved[1] !== '"after"') throw new Error('新しい名前に移らない：' + moved);
+  await p.click('#pasteModal [data-close]');
 });
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
@@ -302,7 +329,7 @@ await step('画面を共有して、範囲を決めてスクリーンショッ�
   if (!(await p.isVisible('#shareBar'))) throw new Error('共有中の帯が出ない');
   await p.click('[data-act="shot"]');
   await p.waitForFunction((n) => document.querySelectorAll('#feed .fi.photo').length > n, before, { timeout: 5000 });
-  const r = await p.evaluate(() => JSON.parse(localStorage.getItem('shotRegion')));
+  const r = await p.evaluate(() => JSON.parse(localStorage.getItem('kougi.shotRegion')));
   if (!r || Math.abs(r.w - 0.5) > 0.05) throw new Error('範囲が保存されない：' + JSON.stringify(r));
   await p.click('[data-act="share-stop"]');
   if (await p.isVisible('#shareBar')) throw new Error('共有をやめられない');
@@ -311,7 +338,7 @@ await step('音声の入力を選べる（設定）', async () => {
   await p.click('#settingsBtn');
   await p.waitForFunction(() => document.querySelectorAll('#audioIn option').length >= 2);
   await p.selectOption('#audioIn', 'share');
-  if ((await p.evaluate(() => JSON.parse(localStorage.getItem('audioIn')))) !== 'share') throw new Error('保存されない');
+  if ((await p.evaluate(() => JSON.parse(localStorage.getItem('kougi.audioIn')))) !== 'share') throw new Error('保存されない');
   await p.selectOption('#audioIn', '');
   await p.click('#settings [data-close]');
 });

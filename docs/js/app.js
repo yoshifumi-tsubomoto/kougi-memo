@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.9.0';
+export const APP_VERSION = '0.10.0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -46,7 +46,20 @@ const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim().slic
 let toastT;
 function toast(m, ms = 2800) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), ms); }
 const errMsg = (e) => String((e && e.message) || e);
-function ls(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch { return null; } }
+// 設定はブラウザ（localStorage）に「kougi.」を頭に付けた名前で保存する（同じサイトのほかのアプリとまざらないように）。
+// 前の版で頭なしの名前で保存した設定は、はじめて読むときに新しい名前へ移す（キーなどを入れ直さなくてよい）
+const LS_PREFIX = 'kougi.';
+function ls(k, v) {
+  try {
+    const nk = LS_PREFIX + k;
+    if (v === undefined) {
+      let raw = localStorage.getItem(nk);
+      if (raw === null && localStorage.getItem(k) !== null) { raw = localStorage.getItem(k); localStorage.setItem(nk, raw); localStorage.removeItem(k); }
+      return JSON.parse(raw || 'null');
+    }
+    if (v === null) localStorage.removeItem(nk); else localStorage.setItem(nk, JSON.stringify(v));
+  } catch { return null; }
+}
 
 const sessions = () => (S.lec && S.lec.sessions) || [];
 const openSession = () => sessions().filter((s) => !s.end).pop() || null;
@@ -82,7 +95,7 @@ function refreshOption() {
 async function loadList(selectId) {
   S.list = await store.listLectures();
   $('#lecSel').innerHTML = '<option value="">講義を選ぶ…</option>' + S.list.map((l) =>
-    `<option value="${esc(l.id)}">${esc(optLabel(l))}</option>`).join('');
+    `<option value="${esc(l.id)}">${esc(optLabel(l))}</option>`).join('') + (S.list.length ? '<option value="__manage">📂 講義の一覧（名前の変更・削除）…</option>' : '');
   $('#lecSel').value = selectId || (S.lec ? S.lec.id : '');
 }
 async function openLecture(id) {
@@ -154,10 +167,9 @@ const Live = {
       setTimeout(() => { if (this.running) this.open(); }, this.lastErr === 'network' ? 3000 : 300);
     };
     this.rec = r;
-    // 既定のマイク以外を選んでいるときは、その音声を音声認識にも渡す（対応しているブラウザだけ。対応していなければ既定のマイクを使う）
-    const track = audioSourceId() && Rec.stream ? Rec.stream.getAudioTracks()[0] : null;
-    try { if (track && track.readyState === 'live') r.start(track); else r.start(); }
-    catch { try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); } }
+    // 音声認識は、いつもブラウザの既定のマイクを聞く。
+    // （録音の音を渡す方法は、ブラウザによって声が届かず、文字起こしが止まることがあったのでやめた）
+    try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); }
   },
   stop() { this.running = false; this.lastErr = ''; try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
   async push(text, at) {
@@ -679,7 +691,7 @@ async function imageUrl(imageId) {
 function setInd(k, cls, text) { $('#d' + k).className = 'dot' + (cls ? ' ' + cls : ''); $('#t' + k).textContent = text; $('#d' + k).parentElement.title = text; }
 function render(full) {
   const has = !!S.lec;
-  $('#welcome').hidden = has; $('#metaBox').hidden = !has; $('#renameBtn').hidden = !has; $('#linkBtn').hidden = !has; $('#focusBtn').hidden = !has; $('#tabs').hidden = !has; $('#ctrl').hidden = !has || S.tab !== 'vLive';
+  $('#welcome').hidden = has; $('#metaBox').hidden = !has; $('#renameBtn').hidden = !has; $('#lecListBtn').hidden = !S.list.length; $('#linkBtn').hidden = !has; $('#focusBtn').hidden = !has; $('#tabs').hidden = !has; $('#ctrl').hidden = !has || S.tab !== 'vLive';
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', has && v.id === S.tab));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === S.tab));
   if (!has) return;
@@ -1157,7 +1169,51 @@ window.addEventListener('beforeunload', (e) => { if (recording() || SEI) { e.pre
 /* ============================== 操作 ============================== */
 $('#newBtn').addEventListener('click', newLecture);
 $('#newBtn2').addEventListener('click', newLecture);
-$('#lecSel').addEventListener('change', (e) => openLecture(e.target.value));
+$('#lecSel').addEventListener('change', (e) => { if (e.target.value === '__manage') { e.target.value = S.lec ? S.lec.id : ''; openLecList(); return; } openLecture(e.target.value); });
+$('#lecListBtn').addEventListener('click', openLecList);
+
+/* ============================== 講義の一覧（名前の変更・削除・整理） ============================== */
+const isEmptyLec = (l, d) => !(l.title || '').trim() && !(l.sessions || []).length && !d.transcript.length && !d.memos.length && !d.audio.some((a) => a.status !== 'deleted');
+async function openLecList() {
+  const rows = [];
+  S.list = await store.listLectures();   // 最新の名前・状態で並べる
+  for (const l of S.list) {
+    const d = await store.getLecture(l.id);
+    const photos = d.memos.filter((m) => m.type === 'photo').length, size = d.audio.filter((a) => a.status !== 'deleted').reduce((n, a) => n + (a.bytes || 0), 0);
+    rows.push({ l, empty: isEmptyLec(l, d), info: [`セッション${(l.sessions || []).length}`, `メモ${d.memos.length - photos}`, `写真${photos}`, size ? `録音${mb(size)}` : '', { never: '未書き出し', changed: '書き出し後に変更あり', done: '書き出し済み' }[exportState(l)] || ''].filter(Boolean).join('・') });
+  }
+  $('#lecList').innerHTML = rows.length ? rows.map(({ l, empty, info }) => `<li class="${S.lec && S.lec.id === l.id ? 'cur' : ''}">
+      <span class="ld">${esc(l.date || '')}</span>
+      <span class="lt"><b>${esc(l.title || '無題の講義')}</b>${S.lec && S.lec.id === l.id ? ' <span class="small muted">（いま開いている）</span>' : ''}<small>${esc(info)}${empty ? '・中身なし' : ''}</small></span>
+      <span class="la"><button class="btn" type="button" data-act="lm-open" data-lid="${esc(l.id)}">開く</button><button class="btn" type="button" data-act="lm-rename" data-lid="${esc(l.id)}" title="名前を変える">✎ 名前</button><button class="btn ghost danger" type="button" data-act="lm-del" data-lid="${esc(l.id)}">削除</button></span>
+    </li>`).join('') : '<li class="empty">講義はまだありません</li>';
+  const n = rows.filter((r) => r.empty && !(recording() && S.lec && S.lec.id === r.l.id)).length;
+  $('#delEmptyBtn').hidden = !n; $('#delEmptyBtn').textContent = `中身のない講義（${n}件）をまとめて削除`;
+  $('#lecModal').hidden = false;
+}
+async function lmRename(id) {
+  const l = S.list.find((x) => x.id === id); if (!l) return;
+  const t = prompt('講義の名前', l.title || ''); if (t === null) return;
+  const u = await store.updateLecture(id, { title: t.trim(), changedAt: Date.now() });
+  if (S.lec && S.lec.id === id) { S.lec = u; $('#fTitle').value = u.title; sendInfo(); }
+  await loadList(); openLecList(); toast('名前を変えました');
+}
+async function lmDelete(id) {
+  const l = S.list.find((x) => x.id === id); if (!l) return;
+  if (recording() && S.lec && S.lec.id === id) { toast('記録中の講義は削除できません。先にセッションを終了してください'); return; }
+  if (!confirm(`「${l.date || ''} ${l.title || '無題の講義'}」を削除します。文字起こし・メモ・写真・録音も消え、元に戻せません。${unexported(l) ? '\nこの講義はまだ書き出していません。' : ''}\nよろしいですか？`)) return;
+  await store.deleteLecture(id);
+  if (S.lec && S.lec.id === id) { S.lec = null; ls('lastLecture', null); render(); }
+  await loadList(); openLecList(); toast('削除しました');
+}
+async function lmDeleteEmpty() {
+  const targets = [];
+  for (const l of S.list) { if (recording() && S.lec && S.lec.id === l.id) continue; if (isEmptyLec(l, await store.getLecture(l.id))) targets.push(l); }
+  if (!targets.length) return;
+  if (!confirm(`タイトルも記録もない講義（${targets.length}件）を削除します。よろしいですか？`)) return;
+  for (const l of targets) { await store.deleteLecture(l.id); if (S.lec && S.lec.id === l.id) { S.lec = null; ls('lastLecture', null); } }
+  render(); await loadList(); openLecList(); toast(`${targets.length}件を削除しました`);
+}
 // 講義の名前を変える（上の講義の一覧の横の ✎）
 $('#renameBtn').addEventListener('click', async () => {
   if (!S.lec) return;
@@ -1222,6 +1278,10 @@ document.addEventListener('click', async (e) => {
     case 'next': nextSession(); break;
     case 'end': endSession(); break;
     case 'old-ai': deleteOldAI(); break;
+    case 'lm-open': $('#lecModal').hidden = true; if (!S.lec || S.lec.id !== b.dataset.lid) { await openLecture(b.dataset.lid); $('#lecSel').value = b.dataset.lid; } break;
+    case 'lm-rename': lmRename(b.dataset.lid); break;
+    case 'lm-del': lmDelete(b.dataset.lid); break;
+    case 'del-empty': lmDeleteEmpty(); break;
     case 'seisho': runSeisho(sid); break;
     case 'seisho-stop': if (SEI) SEI.ctrl.abort(); break;
     case 'delaudio-hq': deleteHqAudio(sid); break;
