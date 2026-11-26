@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.10.0';
+export const APP_VERSION = '0.10.1';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -136,16 +136,33 @@ async function saveLecture(patch) {
  * Chromeの音声認識は数十秒〜数分で自動的に止まるので、止まったらすぐ開き直す */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const Live = {
-  running: false, rec: null, utterStart: 0, lastErr: '',
+  running: false, rec: null, utterStart: 0, lastErr: '', heardAt: 0, watch: 0, reopenT: 0,
   start() {
     if (!SR) { setInd('Speech', 'warn', '音声認識 未対応（Chrome か Edge で開いてください）'); return; }
     this.running = true; this.open();
+    // 見張り：録音には声が入っているのに、音声認識から文字が25秒以上届かないときは、音声認識を開き直す
+    // （ブラウザの音声認識は、エラーも出さずに黙って止まることがある）
+    clearInterval(this.watch);
+    this.watch = setInterval(() => {
+      if (!this.running || !this.rec) return;
+      const now = Date.now();
+      if (now - this.heardAt > 25000 && now - recMeter.loudAt < 4000) { this.heardAt = now; this.restart(); }
+    }, 5000);
+  },
+  restart() {
+    const old = this.rec; this.rec = null;
+    if (old) { old.onend = null; old.onresult = null; old.onerror = null; try { old.abort(); } catch { /* 止まっている */ } }
+    setInd('Speech', 'warn', '音声認識 開き直しています…');
+    clearTimeout(this.reopenT); this.reopenT = setTimeout(() => { if (this.running) this.open(); }, 300);
   },
   open() {
+    if (this.rec) return;   // すでに開いている
+    this.heardAt = Date.now();
     const r = new SR();
     r.lang = 'ja-JP'; r.continuous = true; r.interimResults = true;
     r.onstart = () => { this.lastErr = ''; setInd('Speech', 'on', '音声認識 稼働中'); };
     r.onresult = (e) => {
+      this.heardAt = Date.now();
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i], text = res[0].transcript.trim();
@@ -162,6 +179,7 @@ const Live = {
     };
     r.onend = () => {
       showInterim('');
+      if (this.rec === r) this.rec = null;
       if (!this.running) { if (!this.lastErr) setInd('Speech', '', '音声認識 停止'); return; }
       if (this.lastErr !== 'network') setInd('Speech', 'warn', '音声認識 再接続中…');
       setTimeout(() => { if (this.running) this.open(); }, this.lastErr === 'network' ? 3000 : 300);
@@ -169,9 +187,9 @@ const Live = {
     this.rec = r;
     // 音声認識は、いつもブラウザの既定のマイクを聞く。
     // （録音の音を渡す方法は、ブラウザによって声が届かず、文字起こしが止まることがあったのでやめた）
-    try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); }
+    try { r.start(); } catch { if (this.rec === r) this.rec = null; setTimeout(() => { if (this.running) this.open(); }, 1000); }
   },
-  stop() { this.running = false; this.lastErr = ''; try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
+  stop() { this.running = false; this.lastErr = ''; clearInterval(this.watch); clearTimeout(this.reopenT); try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
   async push(text, at) {
     const s = sessionAt(at) || openSession();
     const row = await store.addTranscript(S.lec.id, { sessionId: s ? s.id : '', at, text });
@@ -252,8 +270,9 @@ const Gain = {
 /* ============================== 音の大きさのゲージ ==============================
  * 入ってくる音の大きさを、動く棒で見せる。小さすぎると文字起こしが聞き取れない */
 function meter() {
-  let ctx = null, raf = 0, el = null, lv = 0, quietSince = 0;
+  let ctx = null, raf = 0, el = null, lv = 0, quietSince = 0, loudAt = 0;
   return {
+    get loudAt() { return loudAt; },   // 最後に、話し声くらいの大きさの音が入った時刻
     start(stream, box) {
       this.stop();
       const t = stream && stream.getAudioTracks()[0]; if (!t || !box) return;
@@ -269,6 +288,7 @@ function meter() {
         const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100));
         lv = pct > lv ? pct : lv * 0.9 + pct * 0.1;            // 上がるのは速く、下がるのはゆっくり
         if (pct > 25) quietSince = Date.now();
+        if (pct > 45) loudAt = Date.now();
         const quiet = Date.now() - quietSince > 8000;
         el.firstElementChild.style.width = lv.toFixed(0) + '%';
         el.className = 'lvl' + (db > -3 ? ' clip' : db > -12 ? ' hot' : '') + (quiet ? ' quiet' : '');
