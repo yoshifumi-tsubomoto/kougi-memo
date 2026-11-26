@@ -163,7 +163,7 @@ await step('入力の大きさを変え、音の大きさのゲージで確か�
 await step('清書（OpenAI）で録音を文字にし直し、清書が済んだ録音を消せる', async () => {
   // OpenAI の代わりに、手元で決まった答えを返す（キーや通信は使わない）
   let sent = 0;
-  await p.route('https://api.openai.com/v1/audio/transcriptions', (r) => { sent++; r.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: '清書の試験', segments: [{ start: 0, text: '清書の試験です。' }, { start: 2, text: 'つづきです。' }] }) }); });
+  await p.route('https://api.openai.com/v1/audio/transcriptions', async (r) => { sent++; await new Promise((ok) => setTimeout(ok, 1500)); r.fulfill({ contentType: 'application/json', body: JSON.stringify({ text: '清書の試験', segments: [{ start: 0, text: '清書の試験です。' }, { start: 2, text: 'つづきです。' }] }) }); });
   await p.click('#settingsBtn');
   await p.check('input[name="engine"][value="openai"]');
   await p.fill('#openaiKey', 'sk-test');
@@ -187,10 +187,14 @@ await step('清書（OpenAI）で録音を文字にし直し、清書が済ん�
   await p.waitForTimeout(800); await p.click('[data-tab="vSum"]');
   await p.waitForSelector('[data-act="seisho-all"]');
   await p.click('[data-act="seisho-all"]');
-  await p.waitForFunction(() => /件のセッションを清書しました/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
-  if (await p.$('[data-act="seisho-all"]')) throw new Error('まとめて清書したあとも、まだのセッションが残る');
+  // 清書の途中で「まとめて要約」を押すと、清書が終わってから作る
   await p.click('[data-act="sum-all"]');
+  await p.waitForSelector('.seisho:has-text("清書が終わったら、要約を作ります")', { timeout: 3000 });
+  await p.waitForFunction(() => /件のセッションを清書しました|要約を作りました/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
   await p.waitForFunction(() => /件のセッションの要約を作りました/.test(document.querySelector('#toast').textContent), null, { timeout: 30000 });
+  const sumByTime = await p.evaluate(() => [...document.querySelectorAll('textarea[data-sum]')].filter((t) => t.value.includes('清書の試験の要約')).length);
+  if (!sumByTime) throw new Error('清書のあとに要約が作られない');
+  if (await p.$('[data-act="seisho-all"]')) throw new Error('まとめて清書したあとも、まだのセッションが残る');
   if (await p.$('[data-act="sum-all"]')) throw new Error('まとめて要約したあとも、まだのセッションが残る');
   p.off('dialog', accept);
   if ((await p.locator('textarea[data-sum]').last().inputValue()).includes('**')) throw new Error('要約に記号が残る');

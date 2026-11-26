@@ -1190,6 +1190,10 @@ async function makeSummary(sid, { ask = true, btn = null } = {}) {
     if (!confirm(`このセッションの文字起こしとメモを ${ENGINE_NAME[engine]} に送って、要約を作ります。よろしいですか？`)) return false;
   }
   const label = btn && btn.textContent; if (btn) { btn.disabled = true; btn.textContent = '要約を作っています…'; }
+  if (SEI && SEI.sid === sid) {   // このセッションを清書している途中なら、終わるのを待つ
+    if (btn) btn.textContent = '清書が終わったら作ります…';
+    while (SEI && SEI.sid === sid) await wait(1000);
+  }
   try {
     const opts = engine === 'openai' ? { key: ls('openaiKey'), model: ls('openaiSumModel') || OPENAI_SUM_DEFAULT }
       : engine === 'claude' ? { key: ls('claudeKey'), model: ls('claudeModel') || CLAUDE_DEFAULT }
@@ -1207,7 +1211,9 @@ async function makeSummary(sid, { ask = true, btn = null } = {}) {
 }
 
 /* すべてのセッションをまとめて清書・要約する（まだのものだけ、順番に） */
-const BATCH = { kind: '', stop: false, text: '' };
+const BATCH = { kind: '', stop: false, text: '', sumWait: false };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const seishoBusy = () => !!SEI || BATCH.kind === 'seisho';
 const hasHq = (sid) => S.transcript.some((t) => t.source === 'hq' && t.sessionId === sid);
 const hasAudio = (sid) => S.audio.some((a) => a.sessionId === sid && a.status !== 'deleted' && a.bytes > 0);
 const hasSummary = (sid) => !!(((S.lec.summaries || {})[sid] || {}).text || '').trim();
@@ -1232,10 +1238,20 @@ async function seishoAll() {
   toast(`${ok}件のセッションを清書しました${stopped ? '（途中でやめました）' : ''}`, 5000);
 }
 async function summaryAll() {
-  if (BATCH.kind || SEI) { toast('ほかの清書・要約が終わってから押してください'); return; }
+  if (BATCH.kind === 'sum' || BATCH.sumWait) { toast('要約を作っているところです'); return; }
   const engine = sumEngine(); if (engine === 'copy') { toast('先に ⚙ 設定の「要約の方法」で、OpenAI・Gemini・Claude のどれかを選んでください', 5000); openSettings(); return; }
-  const list = summaryTodo(); if (!list.length) { toast('要約がまだのセッションはありません'); return; }
-  if (!confirm(`要約がまだのセッション ${list.length}件の文字起こしとメモを ${ENGINE_NAME[engine]} に送って、順番に要約を作ります。よろしいですか？`)) return;
+  // 清書の途中なら、清書が終わるのを待ってから作る（清書した文字から要約するため）
+  if (seishoBusy()) {
+    if (!confirm(`いま清書しています。清書が終わったら、要約がまだのセッションの文字起こしとメモを ${ENGINE_NAME[engine]} に送って、順番に要約を作ります。よろしいですか？`)) return;
+    BATCH.sumWait = true; renderSummary();
+    while (seishoBusy() && BATCH.sumWait) await wait(1000);
+    if (!BATCH.sumWait) { renderSummary(); return; }   // 待っている間に「やめる」を押した
+    BATCH.sumWait = false;
+  } else {
+    const n = summaryTodo().length; if (!n) { toast('要約がまだのセッションはありません'); return; }
+    if (!confirm(`要約がまだのセッション ${n}件の文字起こしとメモを ${ENGINE_NAME[engine]} に送って、順番に要約を作ります。よろしいですか？`)) return;
+  }
+  const list = summaryTodo(); if (!list.length) { renderSummary(); toast('要約がまだのセッションはありません'); return; }
   Object.assign(BATCH, { kind: 'sum', stop: false }); renderSummary();
   let ok = 0;
   for (const [i, s] of list.entries()) {
@@ -1247,13 +1263,15 @@ async function summaryAll() {
   toast(`${ok}件のセッションの要約を作りました${stopped ? '（途中でやめました）' : ''}`, 5000);
 }
 function batchRow() {
-  if (BATCH.kind) return `<div class="sumrow seisho"><span class="small" id="batchState">${esc(BATCH.text)}</span><button class="btn ghost" type="button" data-act="batch-stop">やめる</button></div>`;
   const se = seiEngine(), me = sumEngine(), a = seishoTodo().length, b = summaryTodo().length;
-  if ((se === 'none' || !a) && (me === 'copy' || !b)) return '';
-  return `<div class="sumrow seisho">
-    ${se !== 'none' && a ? `<button class="btn" type="button" data-act="seisho-all">✨ 清書がまだのセッションをまとめて清書（${a}件・${ENGINE_NAME[se]}）</button>` : ''}
-    ${me !== 'copy' && b ? `<button class="btn" type="button" data-act="sum-all">✨ 要約がまだのセッションをまとめて要約（${b}件・${ENGINE_NAME[me]}）</button>` : ''}
-  </div>`;
+  const waitRow = BATCH.sumWait ? `<div class="sumrow seisho"><span class="small">⏳ 清書が終わったら、要約を作ります（待っています）</span><button class="btn ghost" type="button" data-act="sumwait-stop">要約の予約をやめる</button></div>` : '';
+  // 要約のボタンは、清書の途中でも押せる（押すと、清書が終わってから作る）
+  const sumBtn = me !== 'copy' && !BATCH.sumWait && BATCH.kind !== 'sum' && (b || seishoBusy())
+    ? `<button class="btn" type="button" data-act="sum-all">✨ 要約がまだのセッションをまとめて要約（${seishoBusy() ? '清書のあとで' : `${b}件`}・${ENGINE_NAME[me]}）</button>` : '';
+  const state = BATCH.kind ? `<div class="sumrow seisho"><span class="small" id="batchState">${esc(BATCH.text)}</span><button class="btn ghost" type="button" data-act="batch-stop">やめる</button></div>` : '';
+  const seiBtn = !BATCH.kind && se !== 'none' && a ? `<button class="btn" type="button" data-act="seisho-all">✨ 清書がまだのセッションをまとめて清書（${a}件・${ENGINE_NAME[se]}）</button>` : '';
+  const btns = seiBtn || sumBtn ? `<div class="sumrow seisho">${seiBtn}${sumBtn}</div>` : '';
+  return state + waitRow + btns;
 }
 
 // 清書が済んだセッションの録音を消す（場所をあける）
@@ -1416,6 +1434,7 @@ document.addEventListener('click', async (e) => {
     case 'seisho-all': seishoAll(); break;
     case 'sum-all': summaryAll(); break;
     case 'batch-stop': BATCH.stop = true; if (SEI) SEI.ctrl.abort(); break;
+    case 'sumwait-stop': BATCH.sumWait = false; renderSummary(); toast('要約の予約をやめました'); break;
     case 'savesum': {
       // AIが付けがちな Markdown の記号（**太字**・# 見出し・* 箇条書き）を、読みやすい形に直す
       const box = document.querySelector(`[data-sum="${sid}"]`);
