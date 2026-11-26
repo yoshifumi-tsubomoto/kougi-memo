@@ -47,14 +47,15 @@ let toastT;
 function toast(m, ms = 2800) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), ms); }
 const errMsg = (e) => String((e && e.message) || e);
 // 設定はブラウザ（localStorage）に「kougi.」を頭に付けた名前で保存する（同じサイトのほかのアプリとまざらないように）。
-// 前の版で頭なしの名前で保存した設定は、はじめて読むときに新しい名前へ移す（キーなどを入れ直さなくてよい）
+// 前の版で頭なしの名前で保存した設定は、はじめて読むときに新しい名前へ写す（キーなどを入れ直さなくてよい）。
+// 元の名前のものは消さずに残す（まだ前の版を開いている窓や、試験版と本番を行き来したときに、キーが消えたように見えないように）
 const LS_PREFIX = 'kougi.';
 function ls(k, v) {
   try {
     const nk = LS_PREFIX + k;
     if (v === undefined) {
       let raw = localStorage.getItem(nk);
-      if (raw === null && localStorage.getItem(k) !== null) { raw = localStorage.getItem(k); localStorage.setItem(nk, raw); localStorage.removeItem(k); }
+      if (raw === null && localStorage.getItem(k) !== null) { raw = localStorage.getItem(k); localStorage.setItem(nk, raw); }
       return JSON.parse(raw || 'null');
     }
     if (v === null) localStorage.removeItem(nk); else localStorage.setItem(nk, JSON.stringify(v));

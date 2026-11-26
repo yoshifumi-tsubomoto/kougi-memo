@@ -245,14 +245,15 @@ await step('講義の一覧で、名前を変え、中身のない講義をま�
   await p.waitForSelector('#lecModal', { state: 'hidden' });
   await p.waitForSelector('#metaBox:not([hidden])');
 });
-await step('前の版で保存した設定を、新しい名前（kougi.）へ移して読める', async () => {
+await step('前の版で保存した設定を、新しい名前（kougi.）へ写して読める（元も残す）', async () => {
   await p.evaluate(() => localStorage.setItem('pasteOrder', JSON.stringify('after')));
   await p.reload(); await p.waitForSelector('#lecSel');
   await p.click('[data-tab="vLive"]').catch(() => {});
   await p.click('[data-act="paste"]');
   if ((await p.inputValue('#pasteOrder')) !== 'after') throw new Error('前の設定が読めない');
   const moved = await p.evaluate(() => [localStorage.getItem('pasteOrder'), localStorage.getItem('kougi.pasteOrder')]);
-  if (moved[0] !== null || moved[1] !== '"after"') throw new Error('新しい名前に移らない：' + moved);
+  if (moved[1] !== '"after"') throw new Error('新しい名前に写らない：' + moved);
+  if (moved[0] === null) throw new Error('前の版のための元の設定まで消えている');
   await p.click('#pasteModal [data-close]');
 });
 await step('「音声」の点を押すと、音声認識を開き直せる（セッション中だけ）', async () => {
