@@ -122,6 +122,11 @@
     <p class="small muted" id="audioInHint" hidden>機器の名前が出ないときは「一覧を更新」を押し、マイクの使用を許可してください。</p>
     <p class="small muted">Zoom・YouTube などの音を録音するには、「画面共有の音声」を選びます。リアルタイムの文字起こしは、マイクの音だけを聞きます（共有した音声は、あとで清書するか、字幕を「📋 貼り付け」で取り込みます）。</p>
     <div id="oldAI" class="sumrow" hidden><span class="small">前の版でダウンロードした「このPCのAI」のデータが残っています。いまは使わないので、消して場所をあけられます。</span><button class="btn" type="button" data-act="old-ai">AIのデータを消す</button></div>
+    <h4>セッションの上限</h4>
+    <div class="sumrow"><label class="small">1つのセッションは <select id="sessLimit" class="mini-sel">
+      <option value="60">1時間</option><option value="120">2時間</option><option value="180">3時間</option><option value="240">4時間</option><option value="360">6時間</option><option value="480">8時間</option><option value="0">上限なし</option>
+    </select> で自動で終了する</label></div>
+    <p class="small muted">終了し忘れて、録音がずっと続くのを防ぎます。上限の5分前と1分前に知らせます。セッションの途中で変えても、すぐ効きます。</p>
     <h4>アプリとして使う</h4>
     <div class="sumrow" id="installRow"></div>
     <h4>保存の状況</h4>

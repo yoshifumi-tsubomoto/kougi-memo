@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -745,6 +745,28 @@ function tick() {
 }
 setInterval(() => { if (S.lec && S.tab === 'vLive') tick(); }, 1000);
 
+/* セッションの上限：決めた時間がたったら、セッションを自動で終了する（終了し忘れて録音が続くのを防ぐ） */
+const sessLimitMin = () => { const v = ls('sessLimit'); return v === null || v === undefined ? 240 : +v; };
+const limitLabel = (m) => (m % 60 ? `${m}分` : `${m / 60}時間`);
+const LIMIT = { sid: '', warned: {} };
+// 自動テスト用（手元のサーバーで開いたときだけ）：セッションの始まりを前にずらす
+if (['localhost', '127.0.0.1'].includes(location.hostname)) window.__kougiTest = { ageSession(ms) { const s = openSession(); if (s) s.start -= ms; } };
+setInterval(() => {
+  const s = openSession(), lim = sessLimitMin();
+  if (!s || !recording() || !lim) return;
+  if (LIMIT.sid !== s.id) Object.assign(LIMIT, { sid: s.id, warned: {} });
+  const left = lim * 60000 - (Date.now() - s.start);
+  if (left <= 0) {
+    endSession();
+    toast(`セッションの上限（${limitLabel(lim)}）になったので、記録を止めました。続けるときは「● セッションを追加して開始」を押してください`, 15000);
+    return;
+  }
+  for (const m of [5, 1]) if (left <= m * 60000 && !LIMIT.warned[m]) {
+    LIMIT.warned[m] = true;
+    toast(`あと${m}分で、セッションの上限（${limitLabel(lim)}）になり、記録が止まります。続けるときは、終わったあとに「● セッションを追加して開始」を押すか、⚙ 設定で上限を変えてください`, 12000);
+  }
+}, 5000);
+
 const tlineHtml = (t) => `<div class="tline${t.source === 'import' ? ' imp' : ''}"${t.source === 'import' ? ' title="貼り付けて取り込んだ文字"' : ''}><span class="tm">${hms(t.at)}</span><span class="tx">${esc(t.text)}</span></div>`;
 function renderTranscript() {
   const list = $('#tList');
@@ -1093,6 +1115,7 @@ async function openSettings() {
   renderAudioIn();
   $('#looks').innerHTML = LOOKS.map((l) => `<label class="look"><input type="radio" name="look" value="${l.k}" ${currentLook() === l.k ? 'checked' : ''}><span class="sw ${l.k}"></span><span><b>${l.label}</b><small>${l.note}</small></span></label>`).join('');
   const cur = seiEngine();
+  $('#sessLimit').value = String(sessLimitMin());
   $('#inGain').value = gainDb(); $('#inGainV').textContent = dbLabel(gainDb());
   $('#engines').innerHTML = ENGINES.map((e) => `<label class="${e.ready ? '' : 'off'}"><input type="radio" name="engine" value="${e.k}" ${cur === e.k ? 'checked' : ''} ${e.ready ? '' : 'disabled'}><span>${e.label}<small>${e.note}</small></span></label>`).join('');
   renderEngineOpts(); renderOldAI();
@@ -1395,6 +1418,7 @@ document.addEventListener('change', async (e) => {
   if (e.target.name === 'sumEngine') { ls('sumEngine', e.target.value); renderEngineOpts(); if (S.tab === 'vSum') renderSummary(); return; }
   if (e.target.id === 'openaiModel') { ls(e.target.id, e.target.value); return; }
   if (e.target.name === 'look') { setLook(e.target.value); return; }
+  if (e.target.id === 'sessLimit') { ls('sessLimit', +e.target.value); toast(+e.target.value ? `セッションは ${limitLabel(+e.target.value)} で自動で終了します` : 'セッションの上限をなしにしました'); return; }
   if (e.target.id === 'audioIn') { ls('audioIn', e.target.value || null); toast(recording() ? '次のセッションから、この音声の入力を使います' : 'この音声の入力を使います'); return; }
   if (e.target.id === 'autoShot') { Screen.setAuto(e.target.checked); if (e.target.checked) toast('スライドが変わったら自動で撮ります'); return; }
   const sn = e.target.closest('[data-sname]');
