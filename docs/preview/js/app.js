@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.10.3 試験769c788';
+export const APP_VERSION = '0.11.0 試験63effe0';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -862,6 +862,7 @@ function renderSummary() {
       <span class="sp"></span>
       <button class="btn ghost danger" type="button" data-act="dellec">この講義を削除</button>
     </div>
+    ${batchRow()}
     ${exportNote()}</div>`;
   if (!ss.length) html += '<p class="empty">まだセッションがありません。「記録」でセッションを開始してください。</p>';
   for (const s of ss) {
@@ -1147,18 +1148,18 @@ const SUM_ENGINES = [
 const sumEngine = () => { const v = ls('sumEngine'); if (v && SUM_ENGINES.some((x) => x.k === v)) return v; const e = seiEngine(); return e === 'none' ? 'copy' : e; };
 // 前の版で選べた「このPCで清書」は、なくなった（選んでいた人は「清書しない」に戻す）
 const seiEngine = () => { const e = ls('engine') || 'none'; return ['openai', 'gemini'].includes(e) ? e : 'none'; };
-async function runSeisho(sid) {
+async function runSeisho(sid, { ask = true, label = '' } = {}) {
   if (SEI) { toast('ほかのセッションを清書しています。終わってから押してください'); return; }
   const engine = seiEngine();
   if (engine === 'none') { toast('先に ⚙ 設定の「清書の方法」で、清書のしかたを選んでください', 5000); openSettings(); return; }
   const s = sessions().find((x) => x.id === sid); if (!s) return;
   const au = S.audio.filter((a) => a.sessionId === sid && a.status !== 'deleted' && a.bytes > 0).sort((a, b) => a.startAt - b.startAt);
-  if (!au.length) { toast('このセッションには録音がありません'); return; }
-  if (!confirm(`${ENGINE_NAME[engine]} に、このセッションの録音（${mb(au.reduce((n, a) => n + a.bytes, 0))}）を送って清書します。よろしいですか？`)) return;
+  if (!au.length) { if (ask) toast('このセッションには録音がありません'); return false; }
+  if (ask && !confirm(`${ENGINE_NAME[engine]} に、このセッションの録音（${mb(au.reduce((n, a) => n + a.bytes, 0))}）を送って清書します。よろしいですか？`)) return;
   const opts = engine === 'openai' ? { key: ls('openaiKey'), model: ls('openaiModel') || 'whisper-1' }
       : { key: ls('geminiKey'), model: ls('geminiModel') || GEMINI_DEFAULT };
   SEI = { sid, ctrl: new AbortController(), state: '準備しています…' };
-  const show = (t) => { SEI.state = t; const el = document.querySelector(`[data-seistate="${sid}"]`); if (el) el.textContent = t; };
+  const show = (t) => { t = label + t; SEI.state = t; const el = document.querySelector(`[data-seistate="${sid}"]`); if (el) el.textContent = t; };
   renderSummary(); keepAwake();
   try {
     const rows = await seisho(au.map((a) => ({ id: a.id, startAt: a.startAt, endAt: a.endAt, blob: () => store.getAudioBlob(a.id) })),
@@ -1169,12 +1170,92 @@ async function runSeisho(sid) {
     S.lec = await store.updateLecture(S.lec.id, { hq: { ...(S.lec.hq || {}), [sid]: { at: Date.now(), engine, model: opts.model } }, changedAt: Date.now() });
     refreshOption();
     toast(`「${s.name}」を清書しました（${saved.length}行）`, 4000);
+    return true;
   } catch (e) {
-    toast(e.name === 'AbortError' ? '清書をやめました' : '清書できませんでした：' + errMsg(e), 8000);
+    toast(e.name === 'AbortError' ? '清書をやめました' : `「${s.name}」を清書できませんでした：` + errMsg(e), 8000);
+    if (e.name === 'AbortError') BATCH.stop = true;
+    return false;
   } finally {
     SEI = null; if (!recording()) releaseWake(); renderSummary();
   }
 }
+/* 要約を作る（一度に1つのセッション） */
+async function makeSummary(sid, { ask = true, btn = null } = {}) {
+  const engine = sumEngine(); if (engine === 'copy') return false;
+  const s = sessions().find((x) => x.id === sid); if (!s) return false;
+  const chars = +(document.querySelector(`[data-chars="${sid}"]`) || {}).value || ((S.lec.summaries || {})[sid] || {}).chars || 400;
+  const box = document.querySelector(`[data-sum="${sid}"]`);
+  if (ask) {
+    if (box && box.value.trim() && !confirm('いま欄にある要約を、新しく作った要約に置きかえます。よろしいですか？')) return false;
+    if (!confirm(`このセッションの文字起こしとメモを ${ENGINE_NAME[engine]} に送って、要約を作ります。よろしいですか？`)) return false;
+  }
+  const label = btn && btn.textContent; if (btn) { btn.disabled = true; btn.textContent = '要約を作っています…'; }
+  try {
+    const opts = engine === 'openai' ? { key: ls('openaiKey'), model: ls('openaiSumModel') || OPENAI_SUM_DEFAULT }
+      : engine === 'claude' ? { key: ls('claudeKey'), model: ls('claudeModel') || CLAUDE_DEFAULT }
+        : { key: ls('geminiKey'), model: ls('geminiModel') || GEMINI_DEFAULT };
+    const text = cleanSummary(await summarize(buildPrompt(s, chars), { engine, ...opts }));
+    if (!text) throw new Error('要約が返ってきませんでした');
+    await saveLecture({ summaries: { ...(S.lec.summaries || {}), [sid]: { text, chars, savedAt: Date.now(), by: engine } } });
+    await markChanged(); renderSummary(); if (ask) toast('要約を作って保存しました');
+    return true;
+  } catch (e) {
+    toast(`「${s.name}」の要約を作れませんでした：` + errMsg(e), 8000);
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    return false;
+  }
+}
+
+/* すべてのセッションをまとめて清書・要約する（まだのものだけ、順番に） */
+const BATCH = { kind: '', stop: false, text: '' };
+const hasHq = (sid) => S.transcript.some((t) => t.source === 'hq' && t.sessionId === sid);
+const hasAudio = (sid) => S.audio.some((a) => a.sessionId === sid && a.status !== 'deleted' && a.bytes > 0);
+const hasSummary = (sid) => !!(((S.lec.summaries || {})[sid] || {}).text || '').trim();
+const seishoTodo = () => sessions().filter((s) => s.end && hasAudio(s.id) && !hasHq(s.id));
+const summaryTodo = () => sessions().filter((s) => s.end && !hasSummary(s.id) && S.transcript.some((t) => t.sessionId === s.id));
+function batchShow(t) { BATCH.text = t; const el = $('#batchState'); if (el) el.textContent = t; }
+async function seishoAll() {
+  if (BATCH.kind || SEI) { toast('ほかの清書・要約が終わってから押してください'); return; }
+  const engine = seiEngine();
+  if (engine === 'none') { toast('先に ⚙ 設定の「清書の方法」で、清書のしかたを選んでください', 5000); openSettings(); return; }
+  const list = seishoTodo(); if (!list.length) { toast('清書がまだのセッションはありません'); return; }
+  const size = list.reduce((n, s) => n + S.audio.filter((a) => a.sessionId === s.id && a.status !== 'deleted').reduce((m, a) => m + (a.bytes || 0), 0), 0);
+  if (!confirm(`清書がまだのセッション ${list.length}件の録音（あわせて ${mb(size)}）を ${ENGINE_NAME[engine]} に送って、順番に清書します。よろしいですか？`)) return;
+  Object.assign(BATCH, { kind: 'seisho', stop: false }); keepAwake(); renderSummary();
+  let ok = 0;
+  for (const [i, s] of list.entries()) {
+    if (BATCH.stop) break;
+    batchShow(`まとめて清書しています… ${i + 1} / ${list.length}（${s.name}）`);
+    if (await runSeisho(s.id, { ask: false, label: `${i + 1}/${list.length} ` })) ok++;
+  }
+  const stopped = BATCH.stop; Object.assign(BATCH, { kind: '', stop: false, text: '' }); renderSummary();
+  toast(`${ok}件のセッションを清書しました${stopped ? '（途中でやめました）' : ''}`, 5000);
+}
+async function summaryAll() {
+  if (BATCH.kind || SEI) { toast('ほかの清書・要約が終わってから押してください'); return; }
+  const engine = sumEngine(); if (engine === 'copy') { toast('先に ⚙ 設定の「要約の方法」で、OpenAI・Gemini・Claude のどれかを選んでください', 5000); openSettings(); return; }
+  const list = summaryTodo(); if (!list.length) { toast('要約がまだのセッションはありません'); return; }
+  if (!confirm(`要約がまだのセッション ${list.length}件の文字起こしとメモを ${ENGINE_NAME[engine]} に送って、順番に要約を作ります。よろしいですか？`)) return;
+  Object.assign(BATCH, { kind: 'sum', stop: false }); renderSummary();
+  let ok = 0;
+  for (const [i, s] of list.entries()) {
+    if (BATCH.stop) break;
+    batchShow(`まとめて要約を作っています… ${i + 1} / ${list.length}（${s.name}）`);
+    if (await makeSummary(s.id, { ask: false })) ok++;
+  }
+  const stopped = BATCH.stop; Object.assign(BATCH, { kind: '', stop: false, text: '' }); renderSummary();
+  toast(`${ok}件のセッションの要約を作りました${stopped ? '（途中でやめました）' : ''}`, 5000);
+}
+function batchRow() {
+  if (BATCH.kind) return `<div class="sumrow seisho"><span class="small" id="batchState">${esc(BATCH.text)}</span><button class="btn ghost" type="button" data-act="batch-stop">やめる</button></div>`;
+  const se = seiEngine(), me = sumEngine(), a = seishoTodo().length, b = summaryTodo().length;
+  if ((se === 'none' || !a) && (me === 'copy' || !b)) return '';
+  return `<div class="sumrow seisho">
+    ${se !== 'none' && a ? `<button class="btn" type="button" data-act="seisho-all">✨ 清書がまだのセッションをまとめて清書（${a}件・${ENGINE_NAME[se]}）</button>` : ''}
+    ${me !== 'copy' && b ? `<button class="btn" type="button" data-act="sum-all">✨ 要約がまだのセッションをまとめて要約（${b}件・${ENGINE_NAME[me]}）</button>` : ''}
+  </div>`;
+}
+
 // 清書が済んだセッションの録音を消す（場所をあける）
 async function deleteHqAudio(sid) {
   const au = S.audio.filter((a) => a.sessionId === sid && a.status !== 'deleted');
@@ -1197,7 +1278,7 @@ document.addEventListener('visibilitychange', () => {
   // ほかの窓やスマホの操作から戻ってきたとき、音声認識がしばらく文字を返していなければ、開き直しておく
   if (Live.running && Date.now() - Live.heardAt > 10000) Live.restart();
 });
-window.addEventListener('beforeunload', (e) => { if (recording() || SEI) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', (e) => { if (recording() || SEI || BATCH.kind) { e.preventDefault(); e.returnValue = ''; } });
 
 /* ============================== 操作 ============================== */
 $('#newBtn').addEventListener('click', newLecture);
@@ -1331,25 +1412,10 @@ document.addEventListener('click', async (e) => {
       toast((await copyText(buildPrompt(s, chars))) ? 'コピーしました。AIに貼り付けてください' : 'コピーできませんでした');
       break;
     }
-    case 'autosum': {
-      const engine = sumEngine(); if (engine === 'copy') break;
-      const chars = +document.querySelector(`[data-chars="${sid}"]`).value || 400;
-      const box = document.querySelector(`[data-sum="${sid}"]`);
-      if (box.value.trim() && !confirm('いま欄にある要約を、新しく作った要約に置きかえます。よろしいですか？')) break;
-      if (!confirm(`このセッションの文字起こしとメモを ${ENGINE_NAME[engine]} に送って、要約を作ります。よろしいですか？`)) break;
-      b.disabled = true; const label = b.textContent; b.textContent = '要約を作っています…';
-      try {
-        const opts = engine === 'openai' ? { key: ls('openaiKey'), model: ls('openaiSumModel') || OPENAI_SUM_DEFAULT }
-          : engine === 'claude' ? { key: ls('claudeKey'), model: ls('claudeModel') || CLAUDE_DEFAULT }
-            : { key: ls('geminiKey'), model: ls('geminiModel') || GEMINI_DEFAULT };
-        const text = cleanSummary(await summarize(buildPrompt(s, chars), { engine, ...opts }));
-        if (!text) throw new Error('要約が返ってきませんでした');
-        box.value = text;
-        await saveLecture({ summaries: { ...(S.lec.summaries || {}), [sid]: { text, chars, savedAt: Date.now(), by: engine } } });
-        await markChanged(); renderSummary(); toast('要約を作って保存しました');
-      } catch (e) { toast('要約を作れませんでした：' + errMsg(e), 8000); b.disabled = false; b.textContent = label; }
-      break;
-    }
+    case 'autosum': makeSummary(sid, { btn: b }); break;
+    case 'seisho-all': seishoAll(); break;
+    case 'sum-all': summaryAll(); break;
+    case 'batch-stop': BATCH.stop = true; if (SEI) SEI.ctrl.abort(); break;
     case 'savesum': {
       // AIが付けがちな Markdown の記号（**太字**・# 見出し・* 箇条書き）を、読みやすい形に直す
       const box = document.querySelector(`[data-sum="${sid}"]`);
