@@ -5,7 +5,7 @@ import { startHost, randomLinkId, phoneUrl, qrSvg } from './link.js';
 import { parseTranscript } from './transcript.js';
 import { seisho, summarize, OPENAI_MODELS, GEMINI_DEFAULT, OPENAI_SUM_DEFAULT, CLAUDE_DEFAULT } from './seisho.js';
 
-export const APP_VERSION = '0.10.0 試験d50dc69';
+export const APP_VERSION = '0.10.0 試験dc4f979';
 
 /* ============================== 設定 ============================== */
 const TEST = new URLSearchParams(location.search).has('test');   // 自動確認用：区切りを短くする
@@ -167,10 +167,9 @@ const Live = {
       setTimeout(() => { if (this.running) this.open(); }, this.lastErr === 'network' ? 3000 : 300);
     };
     this.rec = r;
-    // 既定のマイク以外を選んでいるときは、その音声を音声認識にも渡す（対応しているブラウザだけ。対応していなければ既定のマイクを使う）
-    const track = audioSourceId() && Rec.stream ? Rec.stream.getAudioTracks()[0] : null;
-    try { if (track && track.readyState === 'live') r.start(track); else r.start(); }
-    catch { try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); } }
+    // 音声認識は、いつもブラウザの既定のマイクを聞く。
+    // （録音の音を渡す方法は、ブラウザによって声が届かず、文字起こしが止まることがあったのでやめた）
+    try { r.start(); } catch { setTimeout(() => { if (this.running) this.open(); }, 1000); }
   },
   stop() { this.running = false; this.lastErr = ''; try { this.rec && this.rec.stop(); } catch { /* 止まっている */ } },
   async push(text, at) {
