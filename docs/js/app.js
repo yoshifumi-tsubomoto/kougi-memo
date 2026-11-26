@@ -1183,7 +1183,12 @@ async function deleteHqAudio(sid) {
 let wake = null;
 async function keepAwake() { try { if (navigator.wakeLock && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => (wake = null)); } } catch { /* 使えない環境 */ } }
 function releaseWake() { try { wake && wake.release(); } catch { /* 済み */ } wake = null; }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && recording()) keepAwake(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !recording()) return;
+  keepAwake();
+  // ほかの窓やスマホの操作から戻ってきたとき、音声認識がしばらく文字を返していなければ、開き直しておく
+  if (Live.running && Date.now() - Live.heardAt > 10000) Live.restart();
+});
 window.addEventListener('beforeunload', (e) => { if (recording() || SEI) { e.preventDefault(); e.returnValue = ''; } });
 
 /* ============================== 操作 ============================== */
