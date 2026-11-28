@@ -275,6 +275,21 @@ await step('「音声」の点を押すと、音声認識を開き直せる（�
   await p.click('#speechInd');
   await p.waitForFunction(() => document.querySelector('#toast').textContent.includes('セッション中だけ'));
 });
+await step('セッションの上限を設定でき、上限になると自動で終了する', async () => {
+  await p.click('#settingsBtn');
+  await p.waitForFunction(() => document.querySelector('#sessLimit').value === '240', null, { timeout: 3000 }).catch(() => { throw new Error('はじめの上限が4時間でない'); });
+  await p.selectOption('#sessLimit', '60');
+  await p.click('#settings [data-close]');
+  await p.click('[data-tab="vLive"]');
+  await p.click('[data-act="start"]');
+  await p.waitForSelector('[data-act="end"]');
+  // セッションの始まりを1時間前にずらして、上限をこえたことにする
+  await p.evaluate(() => { const v = JSON.parse(localStorage.getItem('kougi.sessLimit')); if (v !== 60) throw new Error('保存されない'); });
+  await p.evaluate(() => window.__kougiTest && window.__kougiTest.ageSession(61 * 60000));
+  await p.waitForSelector('[data-act="end"]', { state: 'detached', timeout: 12000 });
+  if (!(await p.textContent('#toast')).includes('上限')) throw new Error('止まったことが知らされない');
+  await p.evaluate(() => localStorage.removeItem('kougi.sessLimit'));
+});
 await step('アプリにする方法を案内できる', async () => {
   await p.click('#installBtn');
   await p.waitForSelector('#installModal:not([hidden]) .step.here');
